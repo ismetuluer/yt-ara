@@ -167,6 +167,15 @@ class AppUpdater:
             # dosya kilitlerini birakmasi icin birkac saniye beklenir.
             "ping -n 3 127.0.0.1 >nul\r\n"
             f'robocopy "{extract_dir}" "{target}" /E /IS /IT /NFL /NDL /NJH /NJS\r\n'
+            # Eski kurulumlarda masaustu kisayolu hala YouTubeSearch.bat'i
+            # hedefliyor olabilir (bkz. Kur.bat'taki ayni konudaki not);
+            # guncelleme sirasinda o da dogrudan pythonw.exe'ye cevrilir.
+            'powershell -NoProfile -Command '
+            f'"$s = (New-Object -ComObject WScript.Shell).CreateShortcut(\'%USERPROFILE%\\Desktop\\YouTube Arama.lnk\'); '
+            f'$s.TargetPath = \'{pythonw}\'; $s.Arguments = \'main.py\'; '
+            f'$s.WorkingDirectory = \'{target}\'; '
+            f'$s.IconLocation = \'{os.path.join(target, "assets", "icon.ico")}\'; '
+            '$s.Description = \'YouTube Gelismis Arama\'; $s.Save()" 2>nul\r\n'
             f'if exist "{pythonw}" start "" /D "{target}" "{pythonw}" main.py\r\n'
             f'rmdir /s /q "{tmp_dir}"\r\n'
             'del "%~f0"\r\n'
