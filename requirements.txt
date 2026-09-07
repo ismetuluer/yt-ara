@@ -1,0 +1,9 @@
+# Yalnizca kullanilan Qt moduller (Core/Gui/Widgets vb.) icin
+# PySide6-Essentials yeterlidir. Tam "PySide6" paketi Qt WebEngine (Chromium,
+# ~200MB), Qt Charts, Qt 3D, Qt Multimedia gibi bu uygulamanin hic kullanmadigi
+# modulleri de kurup portable boyutunu ~600MB buyutur.
+PySide6-Essentials>=6.5
+requests>=2.28
+yt-dlp>=2024.1.1
+# Yalnizca portable EXE uretmek icin gerekli:
+pyinstaller>=6.0

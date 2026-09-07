@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+build/
+dist/
+portable/
+logs/
+config/ayarlar.json
+data/
+downloads/
+*.spec.bak
+tools/ffmpeg/
+tools/yt-dlp/
+browser_extension/
