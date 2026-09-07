@@ -27,7 +27,7 @@ programıdır. Özellikleri:
 - **Video bilgisi**: seçilen videonun kanal, süre, tarih, görüntülenme bilgisi
 - **Seçilen** veya **tüm** video adreslerini tek tuşla panoya kopyalama
   (her adres ayrı satırda, temiz biçimde)
-- TXT ve CSV (Excel uyumlu, Türkçe karakter destekli) dışa aktarma
+- TXT olarak dışa aktarma (tümünü veya kanala göre gruplandırarak)
 - Açık / koyu tema (varsayılan: Windows temasını izler)
 - Türkçe arayüz
 
@@ -53,7 +53,7 @@ programıdır. Özellikleri:
    **Tüm Sonuçları Getir** seçeneği büyük aramalarda uzun sürebilir ve
    API kotanızı hızlı tüketebilir.
 6. Sonuçlardan seçtiklerinizi veya tümünü **kopyalayın** ya da
-   **TXT / CSV** olarak kaydedin.
+   **TXT** olarak kaydedin.
 
 ## 3. YouTube API anahtarı nasıl alınır?
 
@@ -76,8 +76,9 @@ API anahtarı almak isterseniz:
 
 Notlar:
 
-- Anahtarınız yalnızca kendi bilgisayarınızda, uygulama klasöründeki
-  `config/ayarlar.json` dosyasında saklanır. Kimseyle paylaşmayın.
+- Anahtarınız yalnızca kendi bilgisayarınızda, kullanıcı ayarlar
+  klasöründe (`%LOCALAPPDATA%\YouTubeSearch\ayarlar.json`) saklanır.
+  Kimseyle paylaşmayın.
 - Google, API için günlük ücretsiz kota verir (varsayılan 10.000 birim).
   Bir arama sayfası 100 birim harcar; günlük yaklaşık 100 arama sayfası
   eder. Kota dolarsa uygulama sizi bilgilendirir ve kota ertesi gün yenilenir.
@@ -96,45 +97,45 @@ Notlar:
   aralıklarla (örn. her 30 saniyede bir) kare çıkarabilirsiniz. JPG veya
   PNG formatı seçilebilir.
 - **FFmpeg gereksinimi**: Video indirme (yüksek kaliteli video+ses
-  birleştirme) ve görüntü çıkarma için **FFmpeg** gerekir. Uygulama önce
-  `tools/ffmpeg/` klasörüne bakar, sonra sistem PATH'ine. FFmpeg'i
-  <https://www.gyan.dev/ffmpeg/builds/> adresinden indirip `ffmpeg.exe` ve
-  `ffprobe.exe` dosyalarını `tools/ffmpeg/` klasörüne koyabilirsiniz.
+  birleştirme) ve görüntü çıkarma için **FFmpeg** gerekir. Program küçük
+  kalması için FFmpeg'i önceden içermez; ilk ihtiyaç duyulduğunda
+  (indirme penceresinde veya Ayarlar → FFmpeg → İndir) tek tıkla otomatik
+  indirilir (~140 MB, bir kereliğine).
 
 ## 4. Uygulama nasıl çalıştırılır?
 
-### A) Portable EXE ile (önerilen — Python gerekmez)
+Gereksinim: [Python 3.10 veya üzeri](https://www.python.org/downloads/)
+(kurulumda "Add Python to PATH" seçeneğini işaretleyin).
 
-1. `portable\YouTubeSearch` klasörünü istediğiniz yere kopyalayın.
-2. `YouTubeSearch.exe` dosyasına çift tıklayın. Kurulum gerekmez.
-3. İlk açılış birkaç saniye sürebilir (tek dosyalı EXE kendini hazırlar).
+1. Bu depoyu indirin (yeşil **Code → Download ZIP** düğmesi veya
+   `git clone`) ve bir klasöre çıkarın.
+2. `run.bat` dosyasına çift tıklayın.
 
-### B) Kaynak koddan çalıştırma (geliştiriciler için)
+`run.bat`, gerekli Python kütüphanelerini (PySide6, requests, yt-dlp) ilk
+çalıştırmada otomatik indirip kurar, sonraki açılışlarda doğrudan başlar.
+FFmpeg ayrıca gerektiğinde uygulama içinden indirilir (yukarıya bakın).
+Böylece indirilen paket küçük kalır; büyük bağımlılıklar yalnızca
+ihtiyaç duyuldukça, sizin bilgisayarınıza indirilir.
 
-Gereksinim: Python 3.10 veya üzeri.
+Uygulama güncellemelerini (Ayarlar → Uygulama Sürümü) ve yt-dlp
+güncellemelerini (YouTube'un değişikliklerine karşı) kendisi GitHub
+üzerinden denetler.
+
+### Tamamen çevrimdışı / Python kurmadan kullanmak isteyenler için
+
+`build_portable.bat`, Python'ın gömülü bir kopyasıyla birlikte tamamen
+kendi kendine yeten bir klasör (~470 MB) üretir — bilgisayarda Python
+kurulu olmasa bile çalışır, ama indirme boyutu büyüktür. Bunu yalnızca
+internetin kısıtlı olduğu ortamlarda veya Python kurmak istemiyorsanız
+tercih edin:
 
 ```bat
-run.bat
+build_portable.bat
 ```
 
-`run.bat` gerekli kütüphaneleri otomatik kurar ve uygulamayı başlatır.
-
-## 5. Portable EXE nasıl oluşturulur?
-
-1. Proje klasöründe `build.bat` dosyasına çift tıklayın.
-2. İşlem bitince `portable\YouTubeSearch\` klasörü oluşur:
-   ```
-   YouTubeSearch/
-   ├── YouTubeSearch.exe
-   ├── data/
-   ├── config/
-   ├── logs/
-   ├── downloads/
-   └── tools/ffmpeg/   (isteğe bağlı: ffmpeg.exe, ffprobe.exe)
-   ```
-3. Bu klasörü olduğu gibi USB belleğe veya başka bir bilgisayara
-   kopyalayıp kullanabilirsiniz. Ayarlar ve loglar klasörün içinde tutulur;
-   Windows kayıt defteri (Registry) kullanılmaz.
+İşlem bitince `portable\YouTubeSearch\` klasörünü olduğu gibi USB
+belleğe veya başka bir bilgisayara kopyalayıp `YouTubeSearch.bat` ile
+çalıştırabilirsiniz.
 
 ## Sorun giderme
 
@@ -144,8 +145,8 @@ run.bat
 | "Günlük kota doldu" | Ertesi gün tekrar deneyin, başka bir anahtar kullanın veya API'siz yönteme geçin. |
 | "Kanal bulunamadı" | Kanal adresini tarayıcıdan kopyalayıp tam olarak yapıştırın. |
 | "Bağlanılamadı" | İnternet bağlantınızı ve güvenlik duvarınızı kontrol edin. |
-| Video indirilemiyor | FFmpeg'in kurulu olduğundan emin olun (tools/ffmpeg/ veya PATH). |
-| "FFmpeg bulunamadı" | FFmpeg'i indirip tools/ffmpeg/ klasörüne koyun. |
+| Video indirilemiyor | FFmpeg gerekebilir: Ayarlar → FFmpeg → İndir. |
+| "FFmpeg bulunamadı" | İndirme penceresinde "FFmpeg'i İndir" deyin ya da Ayarlar'dan indirin. |
 | Program açılmıyor | `logs\uygulama.log` dosyasındaki son satırlara bakın. |
 
 Teknik ayrıntılar her zaman `logs\uygulama.log` dosyasına yazılır.

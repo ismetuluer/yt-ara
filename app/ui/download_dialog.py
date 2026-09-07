@@ -20,6 +20,7 @@ from app.services.ffmpeg_service import ffmpeg_available, find_ffmpeg
 from app.services.scheduled_download_service import ScheduledDownloadService
 from app.utils.paths import default_download_dir
 from app.workers.download_worker import DownloadWorker
+from app.workers.ffmpeg_download_worker import FFmpegDownloadWorker
 
 COLOR_DONE = QColor(198, 239, 206)
 COLOR_FAILED = QColor(255, 214, 214)
@@ -33,6 +34,8 @@ class DownloadDialog(QDialog):
         self.settings = settings
         self.log = logging.getLogger("yt_ara.dl_dialog")
         self._worker: DownloadWorker | None = None
+        self._ffmpeg_worker: FFmpegDownloadWorker | None = None
+        self._pending_start: tuple | None = None
         self._history = DownloadHistory()
         self._list_items: dict[str, QListWidgetItem] = {}
         self._id_to_url = {item.get("video_id", ""): item.get("url", "") for item in items}
@@ -160,12 +163,56 @@ class DownloadDialog(QDialog):
             return
 
         if not ffmpeg_available():
-            answer = QMessageBox.question(
-                self, "FFmpeg Bulunamadı",
-                "FFmpeg bulunamadı; yalnızca tek dosya indirilebilir.\n"
-                "Devam edilsin mi?")
-            if answer != QMessageBox.Yes:
+            box = QMessageBox(self)
+            box.setWindowTitle("FFmpeg Bulunamadı")
+            box.setText(
+                "Yüksek kaliteli birleştirme için FFmpeg gerekir (yaklaşık 140 MB, "
+                "bir kereliğine indirilir).\nFFmpeg olmadan yalnızca tek dosya "
+                "(daha düşük kalite olabilir) indirilebilir.")
+            download_btn = box.addButton("FFmpeg'i İndir", QMessageBox.AcceptRole)
+            box.addButton("FFmpeg Olmadan Devam Et", QMessageBox.DestructiveRole)
+            cancel_btn = box.addButton("Vazgeç", QMessageBox.RejectRole)
+            box.exec()
+            clicked = box.clickedButton()
+            if clicked is cancel_btn:
                 return
+            if clicked is download_btn:
+                self._download_ffmpeg_then_start(download_dir, quality)
+                return
+        self._start_worker(download_dir, quality)
+
+    def _download_ffmpeg_then_start(self, download_dir: str, quality: str):
+        self._pending_start = (download_dir, quality)
+        self._set_busy(True)
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.status_label.setText("FFmpeg indiriliyor...")
+        self._ffmpeg_worker = FFmpegDownloadWorker(parent=self)
+        self._ffmpeg_worker.progress.connect(self._on_ffmpeg_progress)
+        self._ffmpeg_worker.done.connect(self._on_ffmpeg_ready)
+        self._ffmpeg_worker.failed.connect(self._on_ffmpeg_download_failed)
+        self._ffmpeg_worker.finished.connect(self._on_ffmpeg_worker_finished)
+        self._ffmpeg_worker.start()
+
+    def _on_ffmpeg_progress(self, pct: int, msg: str):
+        self.progress_bar.setValue(pct)
+        self.status_label.setText(msg)
+
+    def _on_ffmpeg_ready(self, path: str):
+        download_dir, quality = self._pending_start
+        self._start_worker(download_dir, quality)
+
+    def _on_ffmpeg_download_failed(self, message: str):
+        self._set_busy(False)
+        self.status_label.setText("Hazır")
+        QMessageBox.warning(self, "FFmpeg İndirme", message)
+
+    def _on_ffmpeg_worker_finished(self):
+        if self._ffmpeg_worker is not None:
+            self._ffmpeg_worker.deleteLater()
+            self._ffmpeg_worker = None
+
+    def _start_worker(self, download_dir: str, quality: str):
         self._worker = DownloadWorker(
             download_dir, quality, self.items, self._history,
             ffmpeg_path=find_ffmpeg(), subtitles=self.settings.download_subtitles,
@@ -264,4 +311,6 @@ class DownloadDialog(QDialog):
             # gercekten bitmesini bekleriz (iptal genelde hizli sonuclanir).
             self._worker.cancel()
             self._worker.wait()
+        if self._ffmpeg_worker is not None:
+            self._ffmpeg_worker.wait()
         super().closeEvent(event)

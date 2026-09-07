@@ -8,11 +8,13 @@ from PySide6.QtWidgets import (
 )
 
 from app.services.app_updater import AppUpdater
+from app.services.ffmpeg_service import ffmpeg_available, find_ffmpeg
 from app.services.quota_service import QuotaTracker
 from app.services.settings_service import SettingsService
 from app.services.youtube_service import YouTubeError, YouTubeService
 from app.services.ytdlp_updater import YtDlpUpdater
 from app.workers.app_update_worker import AppUpdateWorker
+from app.workers.ffmpeg_download_worker import FFmpegDownloadWorker
 from app.workers.update_worker import YtDlpUpdateWorker
 
 THEMES = [("system", "Sistem"), ("light", "Açık"), ("dark", "Koyu")]
@@ -26,6 +28,7 @@ class SettingsDialog(QDialog):
         self._update_worker: YtDlpUpdateWorker | None = None
         self._app_update_worker: AppUpdateWorker | None = None
         self._pending_release: dict | None = None
+        self._ffmpeg_worker: FFmpegDownloadWorker | None = None
         self.setWindowTitle("Ayarlar")
         self.setMinimumWidth(520)
         from app.ui.theme import sync_titlebar
@@ -171,6 +174,21 @@ class SettingsDialog(QDialog):
         self.watchlist_interval_combo.setCurrentIndex(idx)
         form.addRow("İzleme Listesi Denetim Aralığı:", self.watchlist_interval_combo)
 
+        # FFmpeg (yuksek kaliteli birlestirme ve goruntu cikarma icin gerekli;
+        # dagitim boyutunu kucuk tutmak icin onceden paketlenmez)
+        ffmpeg_row = QHBoxLayout()
+        self.ffmpeg_status_label = QLabel()
+        self._refresh_ffmpeg_status()
+        self.download_ffmpeg_btn = QPushButton("İndir")
+        self.download_ffmpeg_btn.clicked.connect(self._download_ffmpeg)
+        ffmpeg_row.addWidget(self.ffmpeg_status_label, 1)
+        ffmpeg_row.addWidget(self.download_ffmpeg_btn)
+        form.addRow("FFmpeg:", ffmpeg_row)
+        self.ffmpeg_progress = QProgressBar()
+        self.ffmpeg_progress.setRange(0, 100)
+        self.ffmpeg_progress.setVisible(False)
+        form.addRow("", self.ffmpeg_progress)
+
         # yt-dlp guncelleme (YouTube degisikliklerine karsi)
         upd_row = QHBoxLayout()
         self.ytdlp_version_label = QLabel(f"Kurulu: {YtDlpUpdater().current_version()}")
@@ -251,6 +269,49 @@ class SettingsDialog(QDialog):
         self.quota_bar.setValue(self._quota.percent())
         self.quota_bar.setToolTip(
             f"Tahmini kullanım: {self._quota.used()} / {self._quota.limit()} birim")
+
+    # ------------------------------------------------------------ ffmpeg
+    def _refresh_ffmpeg_status(self):
+        if ffmpeg_available():
+            path = find_ffmpeg()
+            self.ffmpeg_status_label.setText(f"Kurulu ({path})")
+        else:
+            self.ffmpeg_status_label.setText(
+                "Kurulu değil — yüksek kaliteli birleştirme ve görüntü çıkarma için gerekir")
+
+    def _download_ffmpeg(self):
+        if self._ffmpeg_worker is not None:
+            return
+        self.download_ffmpeg_btn.setEnabled(False)
+        self.ffmpeg_progress.setVisible(True)
+        self.ffmpeg_progress.setValue(0)
+        self.ffmpeg_status_label.setText("İndiriliyor...")
+        self._ffmpeg_worker = FFmpegDownloadWorker(parent=self)
+        self._ffmpeg_worker.progress.connect(self._on_ffmpeg_progress)
+        self._ffmpeg_worker.done.connect(self._on_ffmpeg_done)
+        self._ffmpeg_worker.failed.connect(self._on_ffmpeg_failed)
+        self._ffmpeg_worker.finished.connect(self._on_ffmpeg_worker_done)
+        self._ffmpeg_worker.start()
+
+    def _on_ffmpeg_progress(self, pct: int, msg: str):
+        self.ffmpeg_progress.setValue(pct)
+        self.ffmpeg_status_label.setText(msg)
+
+    def _on_ffmpeg_done(self, path: str):
+        self.ffmpeg_progress.setValue(100)
+        self._refresh_ffmpeg_status()
+
+    def _on_ffmpeg_failed(self, message: str):
+        self.ffmpeg_progress.setVisible(False)
+        self._refresh_ffmpeg_status()
+        QMessageBox.warning(self, "FFmpeg İndirme", message)
+
+    def _on_ffmpeg_worker_done(self):
+        self.download_ffmpeg_btn.setEnabled(True)
+        self.ffmpeg_progress.setVisible(False)
+        if self._ffmpeg_worker is not None:
+            self._ffmpeg_worker.deleteLater()
+            self._ffmpeg_worker = None
 
     # ------------------------------------------------------------ yt-dlp guncelleme
     def _update_ytdlp(self):
@@ -371,6 +432,12 @@ class SettingsDialog(QDialog):
         QMessageBox.warning(self, "Güncelleme", message)
 
     def closeEvent(self, event):
+        ffmpeg_worker = self._ffmpeg_worker
+        if ffmpeg_worker is not None:
+            ffmpeg_worker.finished.disconnect(self._on_ffmpeg_worker_done)
+            self._ffmpeg_worker = None
+            ffmpeg_worker.wait()
+            ffmpeg_worker.deleteLater()
         app_worker = self._app_update_worker
         if app_worker is not None:
             app_worker.finished.disconnect(self._on_app_update_worker_done)
