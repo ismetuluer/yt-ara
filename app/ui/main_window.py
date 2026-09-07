@@ -28,7 +28,7 @@ from app.services.settings_service import SettingsService
 from app.services.watchlist_service import WatchlistService
 from app.ui.scheduled_tab import ScheduledTab
 from app.ui.settings_dialog import SettingsDialog
-from app.ui.theme import apply_theme
+from app.ui.theme import ACCENT_BUTTON_OBJECT_NAME, PILL_BUTTON_OBJECT_NAME, apply_theme
 from app.ui.watchlist_tab import WatchlistTab
 from app.utils.paths import default_download_dir
 from app.workers.app_update_worker import AppUpdateWorker
@@ -48,11 +48,11 @@ DOWNLOADED_TEXT_COLOR = QColor(20, 40, 24)
 DATE_PRESETS = [
     ("Bugün", 0, 0),
     ("Dün", 1, 1),
-    ("Son 1 Hafta", 7, 0),
-    ("Son 1 Ay", 30, 0),
-    ("Son 3 Ay", 90, 0),
-    ("Son 6 Ay", 182, 0),
-    ("Son 1 Yıl", 365, 0),
+    ("Son 1 hafta", 7, 0),
+    ("Son 1 ay", 30, 0),
+    ("Son 3 ay", 90, 0),
+    ("Son 6 ay", 182, 0),
+    ("Son 1 yıl", 365, 0),
 ]
 
 
@@ -169,22 +169,24 @@ class MainWindow(QMainWindow):
         self._update_method_label()
 
         # --- Arama olcutleri
-        crit = QGroupBox("Arama Ölçütleri")
+        crit = QGroupBox("Ara")
         crit_layout = QVBoxLayout(crit)
 
         self.query_edit = QLineEdit()
-        self.query_edit.setPlaceholderText("Örn: İstanbul depremi")
+        self.query_edit.setPlaceholderText("Ne aramak istersin?")
         self.query_edit.returnPressed.connect(self.start_search)
         crit_layout.addWidget(self.query_edit)
 
         # Tam ifade filtresi
-        self.exact_phrase_check = QCheckBox("Arama ifadesini tam olarak eşleştir")
+        self.exact_phrase_check = QCheckBox("Tam eşleşme")
+        self.exact_phrase_check.setToolTip(
+            "Açıkken arama ifadesi kelimelere bölünmeden bütün olarak eşleştirilir.")
         self.exact_phrase_check.setChecked(self.settings.exact_phrase)
         self.exact_phrase_check.toggled.connect(self._on_exact_phrase_toggled)
         crit_layout.addWidget(self.exact_phrase_check)
 
         # Tarih araligi (her zaman etkin; varsayilan olarak bugun)
-        self.date_group = QGroupBox("Tarih Aralığı")
+        self.date_group = QGroupBox("Tarih")
         date_layout = QVBoxLayout(self.date_group)
         date_row = QHBoxLayout()
         today = dt.date.today()
@@ -194,10 +196,10 @@ class MainWindow(QMainWindow):
         self.date_to = QDateEdit(today)
         self.date_to.setCalendarPopup(True)
         self.date_to.setDisplayFormat("dd.MM.yyyy")
-        date_row.addWidget(QLabel("Başlangıç:"))
+        date_row.addWidget(QLabel("Başlangıç"))
         date_row.addWidget(self.date_from)
         date_row.addSpacing(12)
-        date_row.addWidget(QLabel("Bitiş:"))
+        date_row.addWidget(QLabel("Bitiş"))
         date_row.addWidget(self.date_to)
         date_row.addStretch(1)
         date_layout.addLayout(date_row)
@@ -205,6 +207,7 @@ class MainWindow(QMainWindow):
         preset_row = QHBoxLayout()
         for label, start_back, end_back in DATE_PRESETS:
             btn = QPushButton(label)
+            btn.setObjectName(PILL_BUTTON_OBJECT_NAME)
             btn.clicked.connect(
                 lambda _=False, s=start_back, e=end_back: self._apply_date_preset(s, e))
             preset_row.addWidget(btn)
@@ -213,16 +216,16 @@ class MainWindow(QMainWindow):
         crit_layout.addWidget(self.date_group)
 
         # Kanal adresleri
-        ch_group = QGroupBox("Kanal Adresleri")
+        ch_group = QGroupBox("Kanallar")
         ch_layout = QVBoxLayout(ch_group)
-        ch_hint = QLabel("Kanal eklemezseniz tüm YouTube'da aranır.")
+        ch_hint = QLabel("Kanal eklemezsen tüm YouTube'da ararız.")
         ch_hint.setStyleSheet("color: #888;")
         ch_layout.addWidget(ch_hint)
         add_row = QHBoxLayout()
         self.channel_edit = QLineEdit()
-        self.channel_edit.setPlaceholderText("Kanal adresi yapıştırın")
+        self.channel_edit.setPlaceholderText("Kanal adresi yapıştır")
         self.channel_edit.returnPressed.connect(self.add_channel)
-        self.add_channel_btn = QPushButton("+ Kanal Ekle")
+        self.add_channel_btn = QPushButton("Kanal ekle")
         self.add_channel_btn.clicked.connect(self.add_channel)
         add_row.addWidget(self.channel_edit, 1)
         add_row.addWidget(self.add_channel_btn)
@@ -235,13 +238,13 @@ class MainWindow(QMainWindow):
         self.channel_list.customContextMenuRequested.connect(self._channel_context_menu)
         ch_layout.addWidget(self.channel_list, 1)
         ch_btn_row = QHBoxLayout()
-        self.select_all_channels_btn = QPushButton("Hepsini Seç")
+        self.select_all_channels_btn = QPushButton("Hepsini seç")
         self.select_all_channels_btn.clicked.connect(self._select_all_channels)
-        self.clear_channel_selection_btn = QPushButton("Seçimi Temizle")
+        self.clear_channel_selection_btn = QPushButton("Seçimi temizle")
         self.clear_channel_selection_btn.clicked.connect(self._clear_channel_selection)
         self.remove_channel_btn = QPushButton("Sil")
         self.remove_channel_btn.clicked.connect(self.remove_channel)
-        self.rename_channel_btn = QPushButton("Yeniden Adlandır")
+        self.rename_channel_btn = QPushButton("Yeniden adlandır")
         self.rename_channel_btn.clicked.connect(self._rename_selected_channel)
         ch_btn_row.addWidget(self.select_all_channels_btn)
         ch_btn_row.addWidget(self.clear_channel_selection_btn)
@@ -249,9 +252,9 @@ class MainWindow(QMainWindow):
         ch_btn_row.addWidget(self.rename_channel_btn)
         ch_btn_row.addStretch(1)
         ch_layout.addLayout(ch_btn_row)
-        self.exclude_channels_check = QCheckBox("Seçili Kanalları Hariç Tut")
+        self.exclude_channels_check = QCheckBox("Bu kanalları hariç tut")
         self.exclude_channels_check.setToolTip(
-            "İşaretliyken, işaretli kanallar arama kapsamı değil; tüm YouTube'da "
+            "Açıkken, işaretli kanallar arama kapsamı değil; tüm YouTube'da "
             "arayıp bu kanalların videolarını sonuçlardan çıkarır.")
         ch_layout.addWidget(self.exclude_channels_check)
         # ch_group kasitli olarak `crit` icine degil, asagida kendi
@@ -271,19 +274,13 @@ class MainWindow(QMainWindow):
 
         # --- Ara / Iptal
         search_row = QHBoxLayout()
-        self.search_btn = QPushButton("A R A")
+        self.search_btn = QPushButton("Ara")
+        self.search_btn.setObjectName(ACCENT_BUTTON_OBJECT_NAME)
         sf = self.search_btn.font()
-        sf.setPointSize(13)
-        sf.setBold(True)
+        sf.setPointSize(12)
         self.search_btn.setFont(sf)
-        self.search_btn.setMinimumHeight(46)
+        self.search_btn.setMinimumHeight(44)
         self.search_btn.setCursor(Qt.PointingHandCursor)
-        self.search_btn.setStyleSheet(
-            "QPushButton { background-color: #2e7d32; color: white; border: none;"
-            " border-radius: 6px; }"
-            "QPushButton:hover { background-color: #388e3c; }"
-            "QPushButton:pressed { background-color: #1b5e20; }"
-            "QPushButton:disabled { background-color: #555; color: #aaa; }")
         self.search_btn.clicked.connect(self.start_search)
         self.cancel_btn = QPushButton("İptal")
         self.cancel_btn.setMinimumHeight(36)
@@ -298,11 +295,11 @@ class MainWindow(QMainWindow):
         search_tab = QWidget()
         res_layout = QVBoxLayout(search_tab)
         res_top = QHBoxLayout()
-        self.count_label = QLabel("Toplam Sonuç: 0")
-        self.more_btn = QPushButton("Daha Fazla Sonuç Getir")
+        self.count_label = QLabel("0 sonuç")
+        self.more_btn = QPushButton("Daha fazla")
         self.more_btn.setEnabled(False)
         self.more_btn.clicked.connect(lambda: self.continue_search(fetch_all=False))
-        self.all_btn = QPushButton("Tüm Sonuçları Getir")
+        self.all_btn = QPushButton("Tümünü getir")
         self.all_btn.setEnabled(False)
         self.all_btn.clicked.connect(lambda: self.continue_search(fetch_all=True))
         res_top.addWidget(self.count_label)
@@ -332,22 +329,22 @@ class MainWindow(QMainWindow):
         res_layout.addWidget(self.table)
 
         btn_row = QHBoxLayout()
-        self.copy_sel_btn = QPushButton("Seçilenleri Kopyala")
+        self.copy_sel_btn = QPushButton("Seçilenleri kopyala")
         self.copy_sel_btn.clicked.connect(self.copy_selected)
-        self.copy_all_btn = QPushButton("Tüm Video Adreslerini Kopyala")
+        self.copy_all_btn = QPushButton("Tümünü kopyala")
         self.copy_all_btn.clicked.connect(self.copy_all)
-        self.txt_btn = QPushButton("TXT Olarak Kaydet")
+        self.txt_btn = QPushButton("TXT olarak kaydet")
         txt_menu = QMenu(self)
-        txt_menu.addAction("Tümünü Kaydet", lambda: self.export_txt(grouped=False))
-        txt_menu.addAction("Grup Olarak Kaydet (Kanala Göre)",
+        txt_menu.addAction("Tümünü kaydet", lambda: self.export_txt(grouped=False))
+        txt_menu.addAction("Kanala göre grupla",
                            lambda: self.export_txt(grouped=True))
         self.txt_btn.setMenu(txt_menu)
-        self.download_all_btn = QPushButton("Tümünü İndir")
+        self.download_all_btn = QPushButton("Tümünü indir")
         self.download_all_btn.clicked.connect(self.download_all)
         for b in (self.copy_sel_btn, self.copy_all_btn, self.txt_btn, self.download_all_btn):
             btn_row.addWidget(b)
         res_layout.addLayout(btn_row)
-        self.results_tabs.addTab(search_tab, "Arama Sonuçları")
+        self.results_tabs.addTab(search_tab, "Sonuçlar")
 
         # --- Gecmis (daha once indirilenler)
         history_tab = QWidget()
@@ -385,7 +382,7 @@ class MainWindow(QMainWindow):
         self.watchlist_tab = WatchlistTab(
             self._watchlist, self._resolve_channel_name, self._prime_watch,
             self._check_watchlist_now)
-        self.results_tabs.addTab(self.watchlist_tab, "İzleme Listesi")
+        self.results_tabs.addTab(self.watchlist_tab, "İzleme listesi")
 
         self.results_tabs.currentChanged.connect(self._on_results_tab_changed)
 
@@ -666,7 +663,7 @@ class MainWindow(QMainWindow):
             return
         if fetch_all:
             answer = QMessageBox.question(
-                self, "Tüm Sonuçları Getir",
+                self, "Tümünü getir",
                 "Büyük aramalarda bu işlem uzun sürebilir ve API kotanızı hızlı "
                 "tüketebilir.\nDevam edilsin mi?")
             if answer != QMessageBox.Yes:
@@ -737,7 +734,7 @@ class MainWindow(QMainWindow):
         elif has_more:
             self.statusBar().showMessage(
                 f"{len(self.results)} sonuç gösteriliyor — devamı için "
-                f"'Daha Fazla Sonuç Getir'.")
+                f"'Daha fazla'.")
         else:
             self.statusBar().showMessage(f"Tüm sonuçlar getirildi: {len(self.results)} video.")
 
@@ -1062,9 +1059,9 @@ class MainWindow(QMainWindow):
         total = len(self.results)
         shown = self.table.rowCount()
         if shown != total:
-            self.count_label.setText(f"Toplam Sonuç: {shown} (gizlenen: {total - shown})")
+            self.count_label.setText(f"{shown} sonuç (gizlenen: {total - shown})")
         else:
-            self.count_label.setText(f"Toplam Sonuç: {shown}")
+            self.count_label.setText(f"{shown} sonuç")
 
     def _row_urls(self, rows) -> list:
         urls = []
@@ -1210,7 +1207,7 @@ class MainWindow(QMainWindow):
             return
         if len(videos) > 20:
             answer = QMessageBox.question(
-                self, "Tümünü İndir",
+                self, "Tümünü indir",
                 f"Listedeki {len(videos)} video indirilecek. Devam edilsin mi?")
             if answer != QMessageBox.Yes:
                 return

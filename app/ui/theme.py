@@ -1,60 +1,144 @@
-"""Acik / koyu tema destegi. 'system' secilirse Windows temasi izlenir."""
+"""Acik / koyu tema destegi. 'system' secilirse Windows temasi izlenir.
+
+Gorsel dil Apple'in HIG'ine yakinlastirilmistir: agir kenarlikli kutular
+yerine bosluk ve ince ayirici cizgiler, tek bir vurgu rengi (mavi),
+yuvarlatilmis koseler, daha ferah dolgu (padding).
+"""
 import sys
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QGuiApplication, QPalette
+from PySide6.QtGui import QColor, QFont, QGuiApplication, QPalette
 from PySide6.QtWidgets import QApplication
 
-_DARK_QSS = """
-QToolTip { color: #eeeeee; background-color: #2b2b2b; border: 1px solid #555; }
-QLineEdit, QListWidget, QTableWidget, QDateEdit, QComboBox {
-    background-color: #2b2b2b; border: 1px solid #555; border-radius: 3px;
-    padding: 3px; selection-background-color: #3d6fa5;
-}
-QGroupBox { border: 1px solid #555; border-radius: 5px; margin-top: 10px; }
-QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 4px; }
-QPushButton {
-    background-color: #3a3a3a; border: 1px solid #555; border-radius: 4px;
-    padding: 6px 14px;
-}
-QPushButton:hover { background-color: #454545; }
-QPushButton:pressed { background-color: #2f2f2f; }
-QPushButton:disabled { color: #888; background-color: #333; }
-QHeaderView::section {
-    background-color: #3a3a3a; border: 1px solid #555; padding: 4px;
-}
-QCalendarWidget QToolButton { color: #eeeeee; }
-QSplitter::handle { background-color: #555; }
-QSplitter::handle:hover { background-color: #5a9af0; }
-QSplitter::handle:vertical { height: 6px; }
-QSplitter::handle:horizontal { width: 6px; }
+# Apple sistem mavisi (acik/koyu tema icin ayri tonlar -- koyu zeminde
+# okunabilirlik/kontrast icin biraz daha acik bir mavi kullanilir).
+_ACCENT_LIGHT = "#0071e3"
+_ACCENT_LIGHT_HOVER = "#0077ed"
+_ACCENT_LIGHT_PRESSED = "#005bbf"
+_ACCENT_DARK = "#0a84ff"
+_ACCENT_DARK_HOVER = "#3396ff"
+_ACCENT_DARK_PRESSED = "#0068cc"
+
+# Windows'ta San Francisco yerine en yakin sistem fontu.
+_FONT_FAMILY = "Segoe UI Variable Text, Segoe UI, sans-serif"
+
+_DARK_QSS = f"""
+* {{ font-family: {_FONT_FAMILY}; }}
+QToolTip {{ color: #eeeeee; background-color: #2b2b2b; border: 1px solid #444; border-radius: 6px; padding: 4px 8px; }}
+QLineEdit, QListWidget, QTableWidget, QDateEdit, QComboBox {{
+    background-color: #262626; color: #eeeeee; border: 1px solid #3a3a3a;
+    border-radius: 8px; padding: 6px 8px; selection-background-color: {_ACCENT_DARK};
+}}
+QLineEdit:focus, QComboBox:focus, QDateEdit:focus {{ border: 1px solid {_ACCENT_DARK}; }}
+QGroupBox {{ border: none; margin-top: 18px; font-weight: 500; color: #b0b0b0; }}
+QGroupBox::title {{ subcontrol-origin: margin; left: 0; top: 4px; padding: 0; color: #9a9a9a; }}
+QPushButton {{
+    background-color: #2c2c2c; color: #eeeeee; border: 1px solid #3a3a3a;
+    border-radius: 8px; padding: 7px 16px;
+}}
+QPushButton:hover {{ background-color: #363636; }}
+QPushButton:pressed {{ background-color: #232323; }}
+QPushButton:disabled {{ color: #666; background-color: #262626; }}
+QPushButton#accentButton {{
+    background-color: {_ACCENT_DARK}; color: #ffffff; border: none; font-weight: 500;
+}}
+QPushButton#accentButton:hover {{ background-color: {_ACCENT_DARK_HOVER}; }}
+QPushButton#accentButton:pressed {{ background-color: {_ACCENT_DARK_PRESSED}; }}
+QPushButton#accentButton:disabled {{ background-color: #3a3a3a; color: #777; }}
+QPushButton#pillButton {{
+    background-color: #2c2c2c; border: 1px solid #3a3a3a; border-radius: 14px;
+    padding: 5px 14px; color: #cfcfcf;
+}}
+QPushButton#pillButton:hover {{ background-color: #363636; }}
+QPushButton#pillButton:checked {{ background-color: {_ACCENT_DARK}; color: #ffffff; border: none; }}
+QCheckBox, QRadioButton {{ color: #dedede; spacing: 8px; }}
+QTabWidget::pane {{ border: none; border-top: 1px solid #333; }}
+QTabBar::tab {{
+    background: transparent; color: #999; padding: 8px 16px; border: none;
+    border-bottom: 2px solid transparent;
+}}
+QTabBar::tab:selected {{ color: #eeeeee; border-bottom: 2px solid {_ACCENT_DARK}; }}
+QTabBar::tab:hover:!selected {{ color: #ccc; }}
+QHeaderView::section {{
+    background-color: transparent; color: #999; border: none; border-bottom: 1px solid #333;
+    padding: 6px 4px; font-weight: 500;
+}}
+QTableWidget {{ gridline-color: #2e2e2e; alternate-background-color: #232323; }}
+QTableWidget::item {{ padding: 4px; }}
+QTableWidget::item:selected {{ background-color: {_ACCENT_DARK}; color: #ffffff; }}
+QCalendarWidget QToolButton {{ color: #eeeeee; }}
+QSplitter::handle {{ background-color: #3a3a3a; }}
+QSplitter::handle:hover {{ background-color: {_ACCENT_DARK}; }}
+QSplitter::handle:vertical {{ height: 6px; }}
+QSplitter::handle:horizontal {{ width: 6px; }}
+QScrollBar:vertical {{ background: transparent; width: 10px; margin: 0; }}
+QScrollBar::handle:vertical {{ background: #444; border-radius: 5px; min-height: 24px; }}
+QScrollBar::handle:vertical:hover {{ background: #555; }}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
 """
 
-_LIGHT_QSS = """
-QToolTip { color: #202020; background-color: #ffffe1; border: 1px solid #999; }
-QLineEdit, QListWidget, QTableWidget, QDateEdit, QComboBox {
-    background-color: #ffffff; color: #202020;
-    border: 1px solid #b8b8b8; border-radius: 3px; padding: 3px;
-    selection-background-color: #0078d4; selection-color: #ffffff;
-}
-QGroupBox { border: 1px solid #c8c8c8; border-radius: 5px; margin-top: 10px; color: #202020; }
-QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 4px; }
-QPushButton {
-    background-color: #f3f3f3; color: #202020;
-    border: 1px solid #adadad; border-radius: 4px; padding: 6px 14px;
-}
-QPushButton:hover { background-color: #e5f1fb; border-color: #0078d4; }
-QPushButton:pressed { background-color: #cce4f7; }
-QPushButton:disabled { color: #999; background-color: #f3f3f3; }
-QHeaderView::section {
-    background-color: #f3f3f3; color: #202020; border: 1px solid #c8c8c8; padding: 4px;
-}
-QCalendarWidget QToolButton { color: #202020; }
-QSplitter::handle { background-color: #c8c8c8; }
-QSplitter::handle:hover { background-color: #0078d4; }
-QSplitter::handle:vertical { height: 6px; }
-QSplitter::handle:horizontal { width: 6px; }
+_LIGHT_QSS = f"""
+* {{ font-family: {_FONT_FAMILY}; }}
+QToolTip {{ color: #1d1d1f; background-color: #ffffff; border: 1px solid #d2d2d7; border-radius: 6px; padding: 4px 8px; }}
+QLineEdit, QListWidget, QTableWidget, QDateEdit, QComboBox {{
+    background-color: #ffffff; color: #1d1d1f; border: 1px solid #d2d2d7;
+    border-radius: 8px; padding: 6px 8px; selection-background-color: {_ACCENT_LIGHT};
+    selection-color: #ffffff;
+}}
+QLineEdit:focus, QComboBox:focus, QDateEdit:focus {{ border: 1px solid {_ACCENT_LIGHT}; }}
+QGroupBox {{ border: none; margin-top: 18px; font-weight: 500; color: #6e6e73; }}
+QGroupBox::title {{ subcontrol-origin: margin; left: 0; top: 4px; padding: 0; color: #6e6e73; }}
+QPushButton {{
+    background-color: #f5f5f7; color: #1d1d1f; border: 1px solid #d2d2d7;
+    border-radius: 8px; padding: 7px 16px;
+}}
+QPushButton:hover {{ background-color: #ececee; }}
+QPushButton:pressed {{ background-color: #e2e2e4; }}
+QPushButton:disabled {{ color: #a1a1a6; background-color: #f5f5f7; }}
+QPushButton#accentButton {{
+    background-color: {_ACCENT_LIGHT}; color: #ffffff; border: none; font-weight: 500;
+}}
+QPushButton#accentButton:hover {{ background-color: {_ACCENT_LIGHT_HOVER}; }}
+QPushButton#accentButton:pressed {{ background-color: {_ACCENT_LIGHT_PRESSED}; }}
+QPushButton#accentButton:disabled {{ background-color: #e2e2e4; color: #a1a1a6; }}
+QPushButton#pillButton {{
+    background-color: #f5f5f7; border: 1px solid #d2d2d7; border-radius: 14px;
+    padding: 5px 14px; color: #3a3a3c;
+}}
+QPushButton#pillButton:hover {{ background-color: #ececee; }}
+QPushButton#pillButton:checked {{ background-color: {_ACCENT_LIGHT}; color: #ffffff; border: none; }}
+QCheckBox, QRadioButton {{ color: #1d1d1f; spacing: 8px; }}
+QTabWidget::pane {{ border: none; border-top: 1px solid #e5e5ea; }}
+QTabBar::tab {{
+    background: transparent; color: #6e6e73; padding: 8px 16px; border: none;
+    border-bottom: 2px solid transparent;
+}}
+QTabBar::tab:selected {{ color: #1d1d1f; border-bottom: 2px solid {_ACCENT_LIGHT}; }}
+QTabBar::tab:hover:!selected {{ color: #1d1d1f; }}
+QHeaderView::section {{
+    background-color: transparent; color: #6e6e73; border: none; border-bottom: 1px solid #e5e5ea;
+    padding: 6px 4px; font-weight: 500;
+}}
+QTableWidget {{ gridline-color: #f0f0f2; alternate-background-color: #fafafa; }}
+QTableWidget::item {{ padding: 4px; }}
+QTableWidget::item:selected {{ background-color: {_ACCENT_LIGHT}; color: #ffffff; }}
+QCalendarWidget QToolButton {{ color: #1d1d1f; }}
+QSplitter::handle {{ background-color: #e5e5ea; }}
+QSplitter::handle:hover {{ background-color: {_ACCENT_LIGHT}; }}
+QSplitter::handle:vertical {{ height: 6px; }}
+QSplitter::handle:horizontal {{ width: 6px; }}
+QScrollBar:vertical {{ background: transparent; width: 10px; margin: 0; }}
+QScrollBar::handle:vertical {{ background: #d2d2d7; border-radius: 5px; min-height: 24px; }}
+QScrollBar::handle:vertical:hover {{ background: #b8b8bd; }}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
 """
+
+# main_window.py'deki "ARA" gibi tek bir birincil eylem butonu, objectName
+# "accentButton" verilerek bu vurgu rengini alir (bkz. yukaridaki QSS).
+ACCENT_BUTTON_OBJECT_NAME = "accentButton"
+# Tarih hizli secim / kanal etiketi gibi "hap" (pill) gorunumlu, ikincil
+# secim butonlari icin.
+PILL_BUTTON_OBJECT_NAME = "pillButton"
 
 
 def system_is_dark() -> bool:
@@ -67,45 +151,50 @@ def system_is_dark() -> bool:
 
 def _dark_palette() -> QPalette:
     p = QPalette()
-    p.setColor(QPalette.Window, QColor(32, 32, 32))
+    p.setColor(QPalette.Window, QColor(30, 30, 30))
     p.setColor(QPalette.WindowText, QColor(238, 238, 238))
-    p.setColor(QPalette.Base, QColor(43, 43, 43))
-    p.setColor(QPalette.AlternateBase, QColor(38, 38, 38))
+    p.setColor(QPalette.Base, QColor(38, 38, 38))
+    p.setColor(QPalette.AlternateBase, QColor(35, 35, 35))
     p.setColor(QPalette.ToolTipBase, QColor(43, 43, 43))
     p.setColor(QPalette.ToolTipText, QColor(238, 238, 238))
     p.setColor(QPalette.Text, QColor(238, 238, 238))
-    p.setColor(QPalette.Button, QColor(58, 58, 58))
+    p.setColor(QPalette.Button, QColor(44, 44, 44))
     p.setColor(QPalette.ButtonText, QColor(238, 238, 238))
     p.setColor(QPalette.BrightText, QColor(255, 80, 80))
-    p.setColor(QPalette.Link, QColor(90, 160, 250))
-    p.setColor(QPalette.Highlight, QColor(61, 111, 165))
+    p.setColor(QPalette.Link, QColor(_ACCENT_DARK))
+    p.setColor(QPalette.Highlight, QColor(_ACCENT_DARK))
     p.setColor(QPalette.HighlightedText, QColor(255, 255, 255))
-    p.setColor(QPalette.PlaceholderText, QColor(150, 150, 150))
+    p.setColor(QPalette.PlaceholderText, QColor(140, 140, 140))
     return p
 
 
 def _light_palette() -> QPalette:
     p = QPalette()
-    p.setColor(QPalette.Window, QColor(240, 240, 240))
-    p.setColor(QPalette.WindowText, QColor(32, 32, 32))
+    p.setColor(QPalette.Window, QColor(246, 246, 248))
+    p.setColor(QPalette.WindowText, QColor(29, 29, 31))
     p.setColor(QPalette.Base, QColor(255, 255, 255))
-    p.setColor(QPalette.AlternateBase, QColor(245, 245, 245))
-    p.setColor(QPalette.ToolTipBase, QColor(255, 255, 225))
-    p.setColor(QPalette.ToolTipText, QColor(32, 32, 32))
-    p.setColor(QPalette.Text, QColor(32, 32, 32))
-    p.setColor(QPalette.Button, QColor(243, 243, 243))
-    p.setColor(QPalette.ButtonText, QColor(32, 32, 32))
+    p.setColor(QPalette.AlternateBase, QColor(250, 250, 250))
+    p.setColor(QPalette.ToolTipBase, QColor(255, 255, 255))
+    p.setColor(QPalette.ToolTipText, QColor(29, 29, 31))
+    p.setColor(QPalette.Text, QColor(29, 29, 31))
+    p.setColor(QPalette.Button, QColor(245, 245, 247))
+    p.setColor(QPalette.ButtonText, QColor(29, 29, 31))
     p.setColor(QPalette.BrightText, QColor(200, 0, 0))
-    p.setColor(QPalette.Link, QColor(0, 90, 200))
-    p.setColor(QPalette.Highlight, QColor(0, 120, 212))
+    p.setColor(QPalette.Link, QColor(_ACCENT_LIGHT))
+    p.setColor(QPalette.Highlight, QColor(_ACCENT_LIGHT))
     p.setColor(QPalette.HighlightedText, QColor(255, 255, 255))
-    p.setColor(QPalette.PlaceholderText, QColor(120, 120, 120))
+    p.setColor(QPalette.PlaceholderText, QColor(134, 134, 139))
     return p
 
 
 def apply_theme(app: QApplication, mode: str) -> None:
     dark = system_is_dark() if mode == "system" else (mode == "dark")
     app.setStyle("Fusion")
+    font = QFont("Segoe UI Variable Text")
+    if not font.exactMatch():
+        font = QFont("Segoe UI")
+    font.setPointSize(10)
+    app.setFont(font)
     if dark:
         app.setPalette(_dark_palette())
         app.setStyleSheet(_DARK_QSS)
