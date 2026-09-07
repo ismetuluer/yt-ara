@@ -46,15 +46,11 @@ class FFmpegDownloader:
         previous_timeout = socket.getdefaulttimeout()
         socket.setdefaulttimeout(self.timeout)
         try:
-            urllib.request.urlretrieve(
-                _DOWNLOAD_URL, zip_path, reporthook=self._make_hook(progress_cb))
+            self._download_with_progress(zip_path, progress_cb)
         except Exception as exc:
             self.log.warning("FFmpeg indirilemedi: %s", exc)
             shutil.rmtree(tmp_dir, ignore_errors=True)
-            raise FFmpegDownloadError(
-                "FFmpeg indirilemedi. İnternet bağlantınızı kontrol edin.",
-                str(exc),
-            ) from exc
+            raise FFmpegDownloadError(self._user_message_for(exc), str(exc)) from exc
         finally:
             socket.setdefaulttimeout(previous_timeout)
 
@@ -70,6 +66,47 @@ class FFmpegDownloader:
             ) from exc
         shutil.rmtree(tmp_dir, ignore_errors=True)
         return dest
+
+    def _download_with_progress(self, zip_path: str, progress_cb) -> None:
+        """urlretrieve yerine: GitHub'in bazi aglarda/kurumsal proxy'lerde
+        varsayilan Python User-Agent'ini engelleyip 403 dondurmesini
+        onlemek icin ozel bir User-Agent baslikli istek kullanir (bkz.
+        app_updater.py / ytdlp_updater.py'deki ayni yaklasim)."""
+        req = urllib.request.Request(_DOWNLOAD_URL, headers={"User-Agent": "yt-ara"})
+        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            total = int(resp.headers.get("Content-Length", 0))
+            downloaded = 0
+            with open(zip_path, "wb") as f:
+                while True:
+                    chunk = resp.read(1024 * 64)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    pct = min(100, int(downloaded * 100 / total)) if total > 0 else 0
+                    progress_cb(pct, f"İndiriliyor... %{pct}")
+
+    @staticmethod
+    def _user_message_for(exc: Exception) -> str:
+        """Hatayi olabildigince dogru Turkce mesaja cevirir; her hatayi
+        korulen 'internet baglantinizi kontrol edin' mesajiyla ortmez --
+        ozellikle sunucu tarafi (403/404 gibi) veya sertifika hatalarinda
+        yanlis yonlendirme yapmamak icin."""
+        msg = str(exc)
+        low = msg.lower()
+        if "403" in msg:
+            return ("FFmpeg indirilemedi (sunucu erişimi reddetti - HTTP 403). "
+                     "Güvenlik duvarınız veya kurumsal ağ filtreniz GitHub'a "
+                     "erişimi engelliyor olabilir.")
+        if "404" in msg:
+            return "FFmpeg indirilemedi (dosya bulunamadı - HTTP 404). Lütfen tekrar deneyin."
+        if "certificate" in low or "ssl" in low:
+            return ("FFmpeg indirilemedi (güvenli bağlantı/sertifika hatası). "
+                     "Antivirüs programınızın SSL taramasını veya sistem saatinizin "
+                     "doğru olduğunu kontrol edin.")
+        if "timed out" in low or "timeout" in low:
+            return "FFmpeg indirilemedi (bağlantı zaman aşımına uğradı). Lütfen tekrar deneyin."
+        return "FFmpeg indirilemedi. İnternet bağlantınızı kontrol edin."
 
     def _extract(self, zip_path: str, tmp_dir: str) -> str:
         extract_dir = os.path.join(tmp_dir, "extracted")
@@ -94,13 +131,3 @@ class FFmpegDownloader:
         if ffprobe_src:
             shutil.copy2(ffprobe_src, os.path.join(target_dir, "ffprobe.exe"))
         return dest
-
-    @staticmethod
-    def _make_hook(progress_cb):
-        def hook(count, block_size, total_size):
-            if total_size > 0:
-                pct = min(100, int(count * block_size * 100 / total_size))
-            else:
-                pct = 0
-            progress_cb(pct, f"İndiriliyor... %{pct}")
-        return hook

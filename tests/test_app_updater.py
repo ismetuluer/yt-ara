@@ -124,7 +124,8 @@ class TestDownloadAndStage(unittest.TestCase):
         content = open(script_path, encoding="utf-8").read()
         self.assertIn("robocopy", content.lower())
         self.assertIn(fake_root, content)
-        self.assertIn("YouTubeSearch.bat", content)
+        self.assertIn("pythonw.exe", content)
+        self.assertIn("main.py", content)
         self.assertTrue(any(p == 100 for p, _ in progress_events))
 
     def test_bad_zip_raises_clean_error(self):

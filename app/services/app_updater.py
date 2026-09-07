@@ -145,7 +145,14 @@ class AppUpdater:
         """Uygulama kapandiktan sonra dosyalari degistirip yeniden
         baslatacak .bat betigini yazar."""
         target = app_root()
-        launcher = os.path.join(target, "YouTubeSearch.bat")
+        # pythonw.exe DOGRUDAN baslatilir; YouTubeSearch.bat uzerinden
+        # "start" ile baslatmak bazi ortamlarda (ozellikle Windows Terminal
+        # varsayilan terminal uygulamasiyken) surecin hemen sonlanmasina
+        # veya bos bir konsol penceresinin asili kalmasina yol acabiliyor
+        # (bkz. Kur.bat'taki ayni konudaki not). pythonw.exe zaten
+        # konsolsuz oldugu icin bu araya giren adimin kaldirilmasi sorunu
+        # tamamen ortadan kaldirir.
+        pythonw = os.path.join(target, "python", "pythonw.exe")
         script_path = os.path.join(tmp_dir, "apply_update.bat")
         # /MIR kullanilmaz (data/logs/downloads gibi kullanici klasorlerini
         # SILME riski olur); yalnizca guncellenen dosyalar/klasorler
@@ -160,7 +167,7 @@ class AppUpdater:
             # dosya kilitlerini birakmasi icin birkac saniye beklenir.
             "ping -n 3 127.0.0.1 >nul\r\n"
             f'robocopy "{extract_dir}" "{target}" /E /IS /IT /NFL /NDL /NJH /NJS\r\n'
-            f'if exist "{launcher}" start "" "{launcher}"\r\n'
+            f'if exist "{pythonw}" start "" /D "{target}" "{pythonw}" main.py\r\n'
             f'rmdir /s /q "{tmp_dir}"\r\n'
             'del "%~f0"\r\n'
         )

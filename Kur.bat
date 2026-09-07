@@ -62,6 +62,15 @@ set "PYTHONNOUSERSITE=1"
 if errorlevel 1 goto hata_internet
 
 echo [6/6] Baslatici ve masaustu kisayolu olusturuluyor...
+rem NOT: YouTubeSearch.bat, uygulama ICINDEN kendini guncelleyip yeniden
+rem baslatirken kullanilir (bkz. app/services/app_updater.py). Masaustu
+rem kisayolu ise KASITLI OLARAK pythonw.exe'yi DOGRUDAN hedefler, .bat/cmd
+rem araya girmez -- bazi Windows kurulumlarinda (ozellikle Windows Terminal
+rem varsayilan terminal uygulamasiyken) cmd'nin "start" komutuyla baslatilan
+rem sureclerin konsol/is (job) nesnesi kapanisina takilip hemen sonlanmasi
+rem veya bos bir konsol penceresinin ekranda asili kalmasi gibi sorunlar
+rem gorulebiliyor; pythonw.exe zaten konsolsuz oldugu icin dogrudan
+rem baslatmak bu sorunlarin hicbirine yol acmaz.
 > "%TARGET%\YouTubeSearch.bat" (
     echo @echo off
     echo cd /d "%%~dp0"
@@ -71,7 +80,8 @@ echo [6/6] Baslatici ve masaustu kisayolu olusturuluyor...
 
 powershell -NoProfile -Command ^
     "$s = (New-Object -ComObject WScript.Shell).CreateShortcut('%DESKTOP%\YouTube Arama.lnk');" ^
-    "$s.TargetPath = '%TARGET%\YouTubeSearch.bat';" ^
+    "$s.TargetPath = '%TARGET%\python\pythonw.exe';" ^
+    "$s.Arguments = 'main.py';" ^
     "$s.WorkingDirectory = '%TARGET%';" ^
     "$s.IconLocation = '%TARGET%\assets\icon.ico';" ^
     "$s.Description = 'YouTube Gelismis Arama';" ^
@@ -84,7 +94,7 @@ echo   Masaustunde "YouTube Arama" kisayolu olusturuldu.
 echo   Program simdi aciliyor...
 echo ============================================================
 timeout /t 3 /nobreak >nul 2>&1
-start "" "%TARGET%\YouTubeSearch.bat"
+start "" /D "%TARGET%" "%TARGET%\python\pythonw.exe" main.py
 exit /b 0
 
 :refresh_ve_baslat
@@ -94,7 +104,18 @@ echo Program zaten kurulu, guncelleniyor ve aciliyor...
 xcopy /e /i /y /q "app" "%TARGET%\app" >nul
 copy /y "main.py" "%TARGET%\main.py" >nul
 if exist "assets" xcopy /e /i /y /q "assets" "%TARGET%\assets" >nul
-start "" "%TARGET%\YouTubeSearch.bat"
+rem Eski kurulumlarda masaustu kisayolu hala YouTubeSearch.bat'i hedefliyor
+rem olabilir; asagidaki komut onu da guncel (dogrudan pythonw.exe hedefli)
+rem haline getirir.
+powershell -NoProfile -Command ^
+    "$s = (New-Object -ComObject WScript.Shell).CreateShortcut('%DESKTOP%\YouTube Arama.lnk');" ^
+    "$s.TargetPath = '%TARGET%\python\pythonw.exe';" ^
+    "$s.Arguments = 'main.py';" ^
+    "$s.WorkingDirectory = '%TARGET%';" ^
+    "$s.IconLocation = '%TARGET%\assets\icon.ico';" ^
+    "$s.Description = 'YouTube Gelismis Arama';" ^
+    "$s.Save()"
+start "" /D "%TARGET%" "%TARGET%\python\pythonw.exe" main.py
 exit /b 0
 
 :hata_internet
