@@ -1,0 +1,6 @@
+# Kur.bat (son kullanici kurulumu) icin calisma zamani bagimliliklari.
+# pyinstaller gibi yalnizca gelistiricinin portable EXE uretmesi icin
+# gereken paketler burada YOKTUR; bkz. requirements.txt (gelistirme).
+PySide6-Essentials>=6.5
+requests>=2.28
+yt-dlp>=2024.1.1

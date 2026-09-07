@@ -102,40 +102,45 @@ Notlar:
   (indirme penceresinde veya Ayarlar → FFmpeg → İndir) tek tıkla otomatik
   indirilir (~140 MB, bir kereliğine).
 
-## 4. Uygulama nasıl çalıştırılır?
+## 4. Uygulama nasıl kurulur?
 
-Gereksinim: [Python 3.10 veya üzeri](https://www.python.org/downloads/)
-(kurulumda "Add Python to PATH" seçeneğini işaretleyin).
+**Python kurmanıza veya bilgisayarda yönetici (admin) yetkisine sahip
+olmanıza gerek yoktur.** Kurulum tamamen kullanıcı klasörünüze yapılır.
 
-1. Bu depoyu indirin (yeşil **Code → Download ZIP** düğmesi veya
-   `git clone`) ve bir klasöre çıkarın.
-2. `run.bat` dosyasına çift tıklayın.
+1. [Releases](https://github.com/ismetuluer/yt-ara/releases/latest)
+   sayfasından `YouTubeSearch.zip` dosyasını indirin.
+2. Zip dosyasının içeriğini bir klasöre çıkarın (sağ tık → "Tümünü
+   Çıkart").
+3. Çıkan klasördeki **`Kur.bat`** dosyasına çift tıklayın.
 
-`run.bat`, gerekli Python kütüphanelerini (PySide6, requests, yt-dlp) ilk
-çalıştırmada otomatik indirip kurar, sonraki açılışlarda doğrudan başlar.
-FFmpeg ayrıca gerektiğinde uygulama içinden indirilir (yukarıya bakın).
-Böylece indirilen paket küçük kalır; büyük bağımlılıklar yalnızca
-ihtiyaç duyuldukça, sizin bilgisayarınıza indirilir.
+`Kur.bat`:
+
+- Program dosyalarını `Belgelerim\YouTubeSearch` klasörüne kopyalar,
+- Gerekli çalışma ortamını (Python) ve kütüphaneleri (PySide6, requests,
+  yt-dlp) internetten indirip aynı klasöre kurar (yönetici yetkisi
+  gerektirmez, sisteminizdeki hiçbir şeyi değiştirmez),
+- Masaüstünüze **"YouTube Arama"** kısayolu oluşturur,
+- Kurulum bitince programı otomatik açar.
+
+Zip dosyası bu sayede küçük kalır; ağır bağımlılıklar yalnızca sizin
+bilgisayarınıza, ihtiyaç anında indirilir. FFmpeg de aynı mantıkla,
+yalnızca gerektiğinde indirilir (yukarıya bakın).
+
+Bir sonraki kullanımda **masaüstündeki kısayolu** kullanmanız yeterlidir;
+`Kur.bat`'a tekrar ihtiyacınız yoktur (yalnızca onarım/yeniden kurulum
+için tekrar çalıştırılabilir — mevcut kurulumu bozmadan dosyaları
+günceller).
 
 Uygulama güncellemelerini (Ayarlar → Uygulama Sürümü) ve yt-dlp
 güncellemelerini (YouTube'un değişikliklerine karşı) kendisi GitHub
-üzerinden denetler.
+üzerinden denetler; kısayolu kullanmaya devam edebilirsiniz.
 
-### Tamamen çevrimdışı / Python kurmadan kullanmak isteyenler için
+### Geliştiriciler için
 
-`build_portable.bat`, Python'ın gömülü bir kopyasıyla birlikte tamamen
-kendi kendine yeten bir klasör (~470 MB) üretir — bilgisayarda Python
-kurulu olmasa bile çalışır, ama indirme boyutu büyüktür. Bunu yalnızca
-internetin kısıtlı olduğu ortamlarda veya Python kurmak istemiyorsanız
-tercih edin:
-
-```bat
-build_portable.bat
-```
-
-İşlem bitince `portable\YouTubeSearch\` klasörünü olduğu gibi USB
-belleğe veya başka bir bilgisayara kopyalayıp `YouTubeSearch.bat` ile
-çalıştırabilirsiniz.
+Kaynak koddan doğrudan çalıştırmak isteyen geliştiriciler için `run.bat`
+(sistemde kurulu Python 3.10+ gerektirir) ve tam bağımsız bir dağıtım
+klasörü üretmek için `build_portable.bat` mevcuttur; son kullanıcılar
+için önerilen yöntem her zaman yukarıdaki `Kur.bat`'tır.
 
 ## Sorun giderme
 
