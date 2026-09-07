@@ -62,9 +62,17 @@ class WatchlistService:
                         title TEXT,
                         url TEXT,
                         found_at TEXT NOT NULL,
+                        matched INTEGER NOT NULL DEFAULT 0,
                         PRIMARY KEY (watch_id, video_id)
                     )
                 """)
+                # Eski veritabanlarinda "matched" sutunu olmayabilir (bkz.
+                # "Bulunan Videolar" listesi anahtar kelimeyle eslesmeyenleri
+                # de gosteriyordu hatasinin duzeltilmesi); sutun yoksa eklenir.
+                cols = {row[1] for row in conn.execute("PRAGMA table_info(watchlist_seen)")}
+                if "matched" not in cols:
+                    conn.execute(
+                        "ALTER TABLE watchlist_seen ADD COLUMN matched INTEGER NOT NULL DEFAULT 0")
         except sqlite3.Error as exc:
             self.log.warning("Izleme listesi db acilamadi: %s", exc)
 
@@ -131,24 +139,32 @@ class WatchlistService:
             self.log.warning("Gorulen videolar okunamadi: %s", exc)
             return set()
 
-    def mark_seen(self, watch_id: int, video_id: str, title: str, url: str) -> None:
+    def mark_seen(self, watch_id: int, video_id: str, title: str, url: str,
+                  matched: bool = False) -> None:
+        """`matched=True`: video anahtar kelimeyle eslesip indirmeye alindi
+        ("Bulunan Videolar" listesinde gosterilir). `matched=False`:
+        yalnizca bir daha "yeni" sayilmamasi icin gorulmus isaretlenir
+        (ornegin izlemeye yeni alinan kanalin gecmis videolari, veya
+        anahtar kelimeyle eslesmeyen videolar) -- listede GORUNMEZ."""
         try:
             with self._connect() as conn:
                 conn.execute(
                     "INSERT OR IGNORE INTO watchlist_seen "
-                    "(watch_id, video_id, title, url, found_at) VALUES (?, ?, ?, ?, ?)",
+                    "(watch_id, video_id, title, url, found_at, matched) VALUES (?, ?, ?, ?, ?, ?)",
                     (watch_id, video_id, title, url,
-                     dt.datetime.now().isoformat(timespec="seconds")))
+                     dt.datetime.now().isoformat(timespec="seconds"), 1 if matched else 0))
         except sqlite3.Error as exc:
             self.log.warning("Video gorulmus olarak isaretlenemedi: %s", exc)
 
     def recent_found(self, limit: int = 100) -> list[dict]:
-        """Bulunan (eslesen) videolarin, en yeniden eskiye, kanal adiyla birlikte listesi."""
+        """Bulunan (anahtar kelimeyle ESLESEN) videolarin, en yeniden
+        eskiye, kanal adiyla birlikte listesi."""
         try:
             with self._connect() as conn:
                 rows = conn.execute("""
                     SELECT s.video_id, s.title, s.url, s.found_at, w.channel_title, w.keyword
                     FROM watchlist_seen s JOIN watches w ON w.id = s.watch_id
+                    WHERE s.matched = 1
                     ORDER BY s.found_at DESC LIMIT ?
                 """, (limit,)).fetchall()
                 return [dict(r) for r in rows]

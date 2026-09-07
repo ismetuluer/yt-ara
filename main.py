@@ -40,6 +40,22 @@ def main() -> int:
     from app.ui.theme import sync_titlebar
     sync_titlebar(window)
     window.show()
+    # YouTubeSearch.bat -> pythonw.exe ile baslatildiginda pencere sik sik
+    # arka planda aciliyordu (Windows, baska bir surecin baslattigi yeni
+    # pencereleri otomatik one getirmez). raise_/activateWindow genelde
+    # yeterlidir; Windows'ta bazen bunu da yoksayabildigi icin ek olarak
+    # win32 API'siyle zorlanir.
+    window.raise_()
+    window.activateWindow()
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            hwnd = int(window.winId())
+            user32 = ctypes.windll.user32
+            user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+            user32.SetForegroundWindow(hwnd)
+        except Exception:
+            pass
 
     # Otomatik sinama modu: YTARA_SELFTEST=1 iken pencere kisa surede kapanir
     if os.environ.get("YTARA_SELFTEST") == "1":

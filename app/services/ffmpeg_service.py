@@ -81,7 +81,8 @@ def ffmpeg_available() -> bool:
 def _run(cmd: list[str]) -> None:
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=600)
+            cmd, capture_output=True, text=True, timeout=600,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     except FileNotFoundError:
         raise FFmpegError("FFmpeg bulunamadığı için bu işlem gerçekleştirilemedi.")
     except subprocess.TimeoutExpired:
@@ -179,7 +180,8 @@ def _video_duration(video_path: str) -> float | None:
         result = subprocess.run(
             [ffprobe, "-v", "error", "-show_entries", "format=duration",
              "-of", "default=noprint_wrappers=1:nokey=1", video_path],
-            capture_output=True, text=True, timeout=120)
+            capture_output=True, text=True, timeout=120,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         if result.returncode == 0:
             return float(result.stdout.strip())
     except (subprocess.SubprocessError, ValueError):

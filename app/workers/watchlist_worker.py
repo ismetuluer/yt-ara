@@ -46,8 +46,10 @@ class WatchlistWorker(QThread):
             for video in videos:
                 if video.video_id in seen:
                     continue
-                service.mark_seen(watch_id, video.video_id, video.title, video.url)
-                if keyword_matches(video.title, keyword):
+                is_match = keyword_matches(video.title, keyword)
+                service.mark_seen(watch_id, video.video_id, video.title, video.url,
+                                   matched=is_match)
+                if is_match:
                     matches.append({
                         "video_id": video.video_id, "title": video.title,
                         "url": video.url, "channel_title": label,

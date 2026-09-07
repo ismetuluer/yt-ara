@@ -108,7 +108,7 @@ class MainWindow(QMainWindow):
         self._watchlist_worker: WatchlistWorker | None = None
         self._headless_workers: list = []  # dialog acmadan calisan indirme is parcaciklari
 
-        self.setWindowTitle("YouTube Gelişmiş Arama")
+        self.setWindowTitle("YouTube Gelişmiş Arama (Beta)")
         self.resize(1024, 700)
         self._build_ui()
         # Acilistan kisa bir sure sonra yt-dlp'yi sessizce denetle/guncelle
@@ -146,6 +146,12 @@ class MainWindow(QMainWindow):
         font.setPointSize(14)
         font.setBold(True)
         title.setFont(font)
+        beta_label = QLabel("BETA")
+        beta_label.setStyleSheet(
+            "color: #b45309; background-color: #fef3c7; border: 1px solid #d97706;"
+            " border-radius: 3px; padding: 1px 6px; font-weight: bold; font-size: 10px;")
+        beta_label.setToolTip(
+            "Bu uygulama henüz kararlı (stable) sürüm değil; hatalarla karşılaşabilirsiniz.")
         self.downloads_btn = QPushButton("İndirmeler")
         self.downloads_btn.setVisible(False)
         self.downloads_btn.clicked.connect(self._show_download_dialogs)
@@ -154,6 +160,7 @@ class MainWindow(QMainWindow):
         self.method_label = QLabel()
         self.method_label.setStyleSheet("color: #888;")
         top.addWidget(title)
+        top.addWidget(beta_label)
         top.addStretch(1)
         top.addWidget(self.method_label)
         top.addWidget(self.downloads_btn)
@@ -388,6 +395,13 @@ class MainWindow(QMainWindow):
         self.splitter.setStretchFactor(0, 0)
         self.splitter.setStretchFactor(1, 1)
         self.splitter.setHandleWidth(8)
+        # Ayirici cubuk suruklenince bir bolum tamamen kaybolup diger
+        # bolumun her yeri kaplamasini engellemek icin: her iki tarafta da
+        # her zaman kullanilabilir bir minimum yukseklik birakilir (bkz.
+        # childrenCollapsible=False + setMinimumHeight).
+        self.splitter.setChildrenCollapsible(False)
+        ch_group.setMinimumHeight(90)
+        self.results_tabs.setMinimumHeight(150)
         root.addWidget(self.splitter, 1)
         self._restore_window_state()
 
@@ -1445,15 +1459,13 @@ class MainWindow(QMainWindow):
 
     # ================================================================ uygulama guncellemesi
     def _auto_check_app_update(self):
-        """Uygulama surumunu gunde bir kez sessizce denetler.
+        """Uygulama surumunu her acilista sessizce denetler.
 
         yt-dlp'nin aksine bulunan guncelleme otomatik uygulanmaz (uygulamayi
         kapatip yeniden baslatmayi gerektirir); yalnizca durum cubugunda
         haber verilir, gercek guncelleme Ayarlar'dan baslatilir.
         """
         if os.environ.get("YTARA_SELFTEST") == "1":
-            return
-        if self.settings.app_update_last_check == dt.date.today().isoformat():
             return
         self._app_update_worker = AppUpdateWorker(mode="check", auto=True, parent=self)
         self._app_update_worker.checked.connect(self._on_app_update_checked_auto)

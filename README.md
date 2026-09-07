@@ -1,5 +1,9 @@
 # YouTube Gelişmiş Arama
 
+> ⚠️ **Beta**: Uygulama henüz kararlı (stable) bir sürüm değil, aktif
+> geliştirme aşamasındadır. Hata bulursanız lütfen
+> [Issues](https://github.com/ismetuluer/yt-ara/issues) üzerinden bildirin.
+
 Windows için basit, hızlı ve **portable** (kurulum gerektirmeyen) bir YouTube
 gelişmiş video arama uygulaması.
 
