@@ -12,7 +12,8 @@ from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QCheckBox, QDateEdit, QFileDialog, QGroupBox,
     QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit, QListWidget,
     QListWidgetItem, QMainWindow, QMenu, QMessageBox, QProgressBar, QPushButton,
-    QSplitter, QTabWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QSizePolicy, QSplitter, QTabWidget, QTableWidget, QTableWidgetItem, QVBoxLayout,
+    QWidget,
 )
 
 from app.models.video import VideoResult
@@ -253,14 +254,13 @@ class MainWindow(QMainWindow):
 
         self._load_saved_channels()
 
-        # Ust panel (arama olcutleri + ara/iptal) ile sonuclar bolumu,
-        # kullanicinin surukleyerek boyutlandirabilecegi bir QSplitter
-        # icinde tutulur; boylece herkes kendi ekranina/tercihine gore
-        # bolumleri ayarlayabilir.
-        top_pane = QWidget()
-        top_pane_layout = QVBoxLayout(top_pane)
-        top_pane_layout.setContentsMargins(0, 0, 0, 0)
-        top_pane_layout.addWidget(crit)
+        # Arama olcutleri (crit) sabit boyutta kalir, splitter'a DAHIL
+        # EDILMEZ; yalnizca kanal listesi ve sonuc listesi kullanicinin
+        # serbestce boyutlandirabilecegi splitter icinde yer alir --
+        # aksi halde arama olcutleri bolumu genisletilince digerlerinin
+        # yerini kaplayip bos alan birakiyordu.
+        crit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        root.addWidget(crit)
 
         # --- Ara / Iptal
         search_row = QHBoxLayout()
@@ -284,7 +284,7 @@ class MainWindow(QMainWindow):
         self.cancel_btn.clicked.connect(self.cancel_search)
         search_row.addWidget(self.search_btn, 1)
         search_row.addWidget(self.cancel_btn)
-        top_pane_layout.addLayout(search_row)
+        root.addLayout(search_row)
 
         # --- Sonuclar
         self.results_tabs = QTabWidget()
@@ -383,12 +383,11 @@ class MainWindow(QMainWindow):
         self.results_tabs.currentChanged.connect(self._on_results_tab_changed)
 
         self.splitter = QSplitter(Qt.Vertical)
-        self.splitter.addWidget(top_pane)
         self.splitter.addWidget(ch_group)
         self.splitter.addWidget(self.results_tabs)
         self.splitter.setStretchFactor(0, 0)
-        self.splitter.setStretchFactor(1, 0)
-        self.splitter.setStretchFactor(2, 1)
+        self.splitter.setStretchFactor(1, 1)
+        self.splitter.setHandleWidth(8)
         root.addWidget(self.splitter, 1)
         self._restore_window_state()
 
@@ -1249,7 +1248,9 @@ class MainWindow(QMainWindow):
         worker = DownloadWorker(
             download_dir, quality, items, self._history, ffmpeg_path=find_ffmpeg(),
             subtitles=self.settings.download_subtitles,
-            subtitle_langs=self.settings.subtitle_langs, parent=self)
+            subtitle_langs=self.settings.subtitle_langs,
+            max_concurrent=self.settings.max_concurrent_downloads,
+            speed_limit_kbps=self.settings.download_speed_limit_kbps, parent=self)
         worker.finished.connect(self._on_headless_finished)
         worker.failed.connect(
             lambda vid, title, msg: self.log.warning(

@@ -24,6 +24,10 @@ QHeaderView::section {
     background-color: #3a3a3a; border: 1px solid #555; padding: 4px;
 }
 QCalendarWidget QToolButton { color: #eeeeee; }
+QSplitter::handle { background-color: #555; }
+QSplitter::handle:hover { background-color: #5a9af0; }
+QSplitter::handle:vertical { height: 6px; }
+QSplitter::handle:horizontal { width: 6px; }
 """
 
 _LIGHT_QSS = """
@@ -46,6 +50,10 @@ QHeaderView::section {
     background-color: #f3f3f3; color: #202020; border: 1px solid #c8c8c8; padding: 4px;
 }
 QCalendarWidget QToolButton { color: #202020; }
+QSplitter::handle { background-color: #c8c8c8; }
+QSplitter::handle:hover { background-color: #0078d4; }
+QSplitter::handle:vertical { height: 6px; }
+QSplitter::handle:horizontal { width: 6px; }
 """
 
 

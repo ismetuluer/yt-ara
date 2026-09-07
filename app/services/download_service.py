@@ -66,12 +66,16 @@ class DownloadService:
 
     def __init__(self, download_dir: str, quality: str = "En İyi",
                  ffmpeg_path: str | None = None, subtitles: bool = False,
-                 subtitle_langs: str = "tr,en"):
+                 subtitle_langs: str = "tr,en", speed_limit_kbps: int = 0):
         self.download_dir = download_dir
         self.quality = quality
         self.ffmpeg_path = ffmpeg_path or find_ffmpeg()
         self.subtitles = subtitles
         self.subtitle_langs = subtitle_langs
+        # Ayni anda birden fazla video indirilirken toplam bant genisligini
+        # sinirlamak icin (bkz. Ayarlar -> Indirme hizi siniri); her video
+        # kendi DownloadService'inde bu sinira ayri ayri uyar.
+        self.speed_limit_kbps = max(0, int(speed_limit_kbps or 0))
         self.log = logging.getLogger("yt_ara.download")
         self._cancel = threading.Event()
 
@@ -111,12 +115,19 @@ class DownloadService:
             "retries": 3,
             "fragment_retries": 3,
             "continuedl": True,
+            # Iptal edildiginde askidaki bir soket okumasinin sonsuza kadar
+            # beklememesi icin (bkz. DownloadWorker.cancel): baglanti
+            # donarsa en gec bu sure sonunda hata/yeniden deneme tetiklenir
+            # ve iptal kontrolu bu sirada devreye girebilir.
+            "socket_timeout": 10,
             # YouTube'un varsayilan istemciye 403 vermesine karsi android
             # istemcisi kullanilir (yt-dlp icin yaygin cozum).
             "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
         }
         if self.ffmpeg_path:
             opts["ffmpeg_location"] = os.path.dirname(self.ffmpeg_path)
+        if self.speed_limit_kbps > 0:
+            opts["ratelimit"] = self.speed_limit_kbps * 1024
         if self.subtitles:
             opts["writesubtitles"] = True
             opts["writeautomaticsub"] = True
@@ -193,6 +204,8 @@ class DownloadService:
         ]
         if self.ffmpeg_path:
             cmd += ["--ffmpeg-location", os.path.dirname(self.ffmpeg_path)]
+        if self.speed_limit_kbps > 0:
+            cmd += ["--limit-rate", f"{self.speed_limit_kbps * 1024}"]
         if self.subtitles:
             cmd += ["--write-subs", "--write-auto-subs", "--sub-langs", ",".join(self._lang_list())]
             if self.ffmpeg_path:

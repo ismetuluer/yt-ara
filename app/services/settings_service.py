@@ -27,6 +27,8 @@ DEFAULTS = {
     "watchlist_interval_minutes": 30,  # izleme listesi denetim araligi
     "app_update_last_check": "",   # uygulama surumu otomatik denetiminin yapildigi gun
     "app_update_skip_version": "", # kullanicinin "atla" dedigi surum (tekrar sorulmaz)
+    "max_concurrent_downloads": 3,  # ayni anda indirilecek en fazla video sayisi
+    "download_speed_limit_kbps": 0,  # indirme hizi siniri (KB/s); 0 = sinirsiz
 }
 
 
@@ -280,3 +282,27 @@ class SettingsService:
     @app_update_skip_version.setter
     def app_update_skip_version(self, value: str) -> None:
         self.data["app_update_skip_version"] = value
+
+    @property
+    def max_concurrent_downloads(self) -> int:
+        try:
+            value = int(self.data.get("max_concurrent_downloads", 3))
+        except (TypeError, ValueError):
+            return 3
+        return min(6, max(1, value))
+
+    @max_concurrent_downloads.setter
+    def max_concurrent_downloads(self, value: int) -> None:
+        self.data["max_concurrent_downloads"] = min(6, max(1, int(value)))
+
+    @property
+    def download_speed_limit_kbps(self) -> int:
+        try:
+            value = int(self.data.get("download_speed_limit_kbps", 0))
+        except (TypeError, ValueError):
+            return 0
+        return max(0, value)
+
+    @download_speed_limit_kbps.setter
+    def download_speed_limit_kbps(self, value: int) -> None:
+        self.data["download_speed_limit_kbps"] = max(0, int(value))

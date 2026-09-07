@@ -4,7 +4,7 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout,
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QProgressBar, QPushButton,
-    QVBoxLayout,
+    QSpinBox, QVBoxLayout,
 )
 
 from app.services.app_updater import AppUpdater
@@ -151,6 +151,29 @@ class SettingsDialog(QDialog):
         self.notify_check = QCheckBox("İndirme tamamlanınca bildirim göster")
         self.notify_check.setChecked(self.settings.notify_download_complete)
         form.addRow("", self.notify_check)
+
+        # Ayni anda indirme sayisi
+        self.max_concurrent_spin = QSpinBox()
+        self.max_concurrent_spin.setRange(1, 6)
+        self.max_concurrent_spin.setValue(self.settings.max_concurrent_downloads)
+        self.max_concurrent_spin.setToolTip(
+            "Aynı anda en fazla kaç video indirileceği. Yüksek değer daha "
+            "hızlı toplu indirme sağlar ama internet bağlantınızı ve "
+            "bilgisayarınızı daha çok kullanır.")
+        form.addRow("Aynı Anda İndirme Sayısı:", self.max_concurrent_spin)
+
+        # Indirme hizi sinirlamasi
+        self.speed_limit_spin = QSpinBox()
+        self.speed_limit_spin.setRange(0, 100_000)
+        self.speed_limit_spin.setSingleStep(100)
+        self.speed_limit_spin.setSuffix(" KB/sn")
+        self.speed_limit_spin.setSpecialValueText("Sınırsız")
+        self.speed_limit_spin.setValue(self.settings.download_speed_limit_kbps)
+        self.speed_limit_spin.setToolTip(
+            "Her video indirmesi için ayrı ayrı uygulanan hız sınırı "
+            "(0 = sınırsız). İnternet bağlantınızı diğer kullanımlar için "
+            "boşta bırakmak isterseniz kullanışlıdır.")
+        form.addRow("İndirme Hızı Sınırı:", self.speed_limit_spin)
 
         # Altyazi dilleri (varsayilan; indirme penceresindeki secenegi etkiler)
         self.subtitle_langs_edit = QLineEdit(self.settings.subtitle_langs)
@@ -471,6 +494,8 @@ class SettingsDialog(QDialog):
         self.settings.channel_scan_scope = self.scope_combo.currentData()
         self.settings.frame_format = self.frame_combo.currentData()
         self.settings.notify_download_complete = self.notify_check.isChecked()
+        self.settings.max_concurrent_downloads = self.max_concurrent_spin.value()
+        self.settings.download_speed_limit_kbps = self.speed_limit_spin.value()
         self.settings.subtitle_langs = self.subtitle_langs_edit.text().strip() or "tr,en"
         self.settings.hide_downloaded = self.hide_downloaded_check.isChecked()
         self.settings.watchlist_interval_minutes = self.watchlist_interval_combo.currentData()

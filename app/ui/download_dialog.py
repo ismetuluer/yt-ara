@@ -40,6 +40,10 @@ class DownloadDialog(QDialog):
         self._list_items: dict[str, QListWidgetItem] = {}
         self._id_to_url = {item.get("video_id", ""): item.get("url", "") for item in items}
         self.completed_urls: set[str] = set()
+        # video_id -> (indirilen_byte, toplam_byte); genel yuzde bunlardan
+        # hesaplanir (bkz. _recompute_overall_progress).
+        self._byte_progress: dict[str, tuple[int, int]] = {}
+        self._done_count = 0
 
         self.setWindowTitle("Video İndir")
         self.setMinimumSize(560, 420)
@@ -103,9 +107,15 @@ class DownloadDialog(QDialog):
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(True)
         layout.addWidget(self.progress_bar)
+        status_row = QHBoxLayout()
         self.status_label = QLabel("Hazır")
-        layout.addWidget(self.status_label)
+        self.active_label = QLabel("")
+        self.active_label.setStyleSheet("color: #888;")
+        status_row.addWidget(self.status_label, 1)
+        status_row.addWidget(self.active_label)
+        layout.addLayout(status_row)
 
         self.notify_check = QCheckBox("İndirme tamamlanınca bildirim göster")
         self.notify_check.setChecked(self.settings.notify_download_complete)
@@ -213,18 +223,54 @@ class DownloadDialog(QDialog):
             self._ffmpeg_worker = None
 
     def _start_worker(self, download_dir: str, quality: str):
+        self._byte_progress = {}
+        self._done_count = 0
         self._worker = DownloadWorker(
             download_dir, quality, self.items, self._history,
             ffmpeg_path=find_ffmpeg(), subtitles=self.settings.download_subtitles,
-            subtitle_langs=self.settings.subtitle_langs, parent=self)
+            subtitle_langs=self.settings.subtitle_langs,
+            max_concurrent=self.settings.max_concurrent_downloads,
+            speed_limit_kbps=self.settings.download_speed_limit_kbps, parent=self)
         self._worker.progress.connect(self._on_progress)
         self._worker.finished.connect(self._on_finished)
         self._worker.failed.connect(self._on_failed)
         self._worker.all_done.connect(self._on_all_done)
+        self._worker.active_count_changed.connect(self._on_active_count_changed)
         self._set_busy(True)
-        self.progress_bar.setRange(0, 0)
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
         self.status_label.setText("İndiriliyor...")
+        self._on_active_count_changed(0)
         self._worker.start()
+
+    def _on_active_count_changed(self, active: int):
+        self.active_label.setText(
+            f"Aktif indirme: {active} / en fazla {self.settings.max_concurrent_downloads}")
+
+    def _recompute_overall_progress(self):
+        """Tum videolarin toplam indirilen/toplam byte'ina gore genel yuzdeyi hesaplar.
+
+        Toplam boyutu henuz bilinmeyen (ornegin daha baslamamis) videolar
+        icin, tamamlanan video sayisina gore kaba bir pay eklenir; boylece
+        yuzde, tum boyutlar bilinmeden once bile mantikli sekilde ilerler.
+        """
+        total_items = len(self.items) or 1
+        known_downloaded = sum(d for d, t in self._byte_progress.values() if t > 0)
+        known_total = sum(t for _, t in self._byte_progress.values() if t > 0)
+        items_with_known_total = sum(1 for _, t in self._byte_progress.values() if t > 0)
+        if known_total > 0:
+            byte_pct = known_downloaded / known_total
+            # Boyutu bilinen videolarin agirlikli payi + geri kalanlarin
+            # (boyutu bilinmeyen/henuz baslamamis) tamamlanma orani.
+            weight = items_with_known_total / total_items
+            other_done = max(0, self._done_count - items_with_known_total)
+            other_weight = (total_items - items_with_known_total) / total_items
+            other_pct = (other_done / (total_items - items_with_known_total)
+                         if total_items > items_with_known_total else 0)
+            pct = byte_pct * weight + other_pct * other_weight
+        else:
+            pct = self._done_count / total_items
+        self.progress_bar.setValue(min(100, max(0, int(pct * 100))))
 
     def _schedule(self, download_dir: str, quality: str):
         run_at = self.schedule_edit.dateTime().toPython()
@@ -250,7 +296,15 @@ class DownloadDialog(QDialog):
     def _cancel(self):
         if self._worker is not None:
             self._worker.cancel()
-            self.status_label.setText("İptal ediliyor...")
+            self.cancel_btn.setEnabled(False)
+            # Aktif indirmeler genelde birkac saniye icinde durur; ancak bir
+            # video tam o an FFmpeg ile birlestiriliyorsa (ses+goruntu
+            # birlestirme adimi), o adim yarida kesilemez ve bitmesi
+            # beklenir -- bu yuzden kullaniciya suresiz "hala bekliyor"
+            # izlenimi vermemek icin durum aciklamasi buna gore yazilir.
+            self.status_label.setText(
+                "İptal ediliyor... (bir video tam o an birleştiriliyorsa "
+                "o adımın bitmesi birkaç saniye daha sürebilir)")
 
     def _on_progress(self, video_id, title, downloaded, total, speed, eta, filename):
         item = self._list_items.get(video_id)
@@ -258,9 +312,12 @@ class DownloadDialog(QDialog):
             return
         if total > 0:
             pct = int(downloaded * 100 / total)
-            item.setText(f"{title}  —  %{pct}")
+            speed_txt = f"  ({speed / 1024 / 1024:.1f} MB/sn)" if speed > 0 else ""
+            item.setText(f"{title}  —  %{pct}{speed_txt}")
         else:
             item.setText(f"{title}  —  indiriliyor...")
+        self._byte_progress[video_id] = (downloaded, total)
+        self._recompute_overall_progress()
 
     def _on_finished(self, video_id, title, path):
         url = self._id_to_url.get(video_id)
@@ -271,6 +328,9 @@ class DownloadDialog(QDialog):
             item.setText(title)
             item.setBackground(COLOR_DONE)
         self.status_label.setText(f"Tamamlandı: {title}")
+        self._done_count += 1
+        self._byte_progress.pop(video_id, None)
+        self._recompute_overall_progress()
 
     def _on_failed(self, video_id, title, message):
         item = self._list_items.get(video_id)
@@ -279,9 +339,13 @@ class DownloadDialog(QDialog):
             item.setBackground(COLOR_FAILED)
             item.setToolTip(message)
         self.status_label.setText(f"İndirilemedi: {title}")
+        self._done_count += 1
+        self._byte_progress.pop(video_id, None)
+        self._recompute_overall_progress()
 
     def _on_all_done(self, done, total):
         self._set_busy(False)
+        self.active_label.setText("")
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(100)
         if done == total:
@@ -301,6 +365,7 @@ class DownloadDialog(QDialog):
     def _set_busy(self, busy: bool):
         self.download_btn.setEnabled(not busy)
         self.cancel_btn.setVisible(busy)
+        self.cancel_btn.setEnabled(busy)
         self.close_btn.setEnabled(not busy)
         self.quality_combo.setEnabled(not busy)
 

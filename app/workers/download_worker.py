@@ -14,8 +14,8 @@ from PySide6.QtCore import QThread, Signal
 from app.services.download_history import DownloadHistory
 from app.services.download_service import DownloadError, DownloadService, sanitize_filename
 
-# Ayni anda indirilecek en fazla video sayisi.
-MAX_CONCURRENT_DOWNLOADS = 3
+# Ayarlar'dan bir deger gelmezse kullanilacak varsayilan.
+DEFAULT_MAX_CONCURRENT_DOWNLOADS = 3
 
 
 class DownloadWorker(QThread):
@@ -27,11 +27,14 @@ class DownloadWorker(QThread):
     failed = Signal(str, str, str)
     # (tamamlanan, toplam)
     all_done = Signal(int, int)
+    # (su an aktif indirme sayisi)
+    active_count_changed = Signal(int)
 
     def __init__(self, download_dir: str, quality: str, items: list[dict],
                  history: DownloadHistory | None = None, ffmpeg_path: str | None = None,
                  subtitles: bool = False, subtitle_langs: str = "tr,en",
-                 parent=None):
+                 max_concurrent: int = DEFAULT_MAX_CONCURRENT_DOWNLOADS,
+                 speed_limit_kbps: int = 0, parent=None):
         """items: [{'video_id', 'title', 'url'}, ...]"""
         super().__init__(parent)
         self.download_dir = download_dir
@@ -39,6 +42,8 @@ class DownloadWorker(QThread):
         self.ffmpeg_path = ffmpeg_path
         self.subtitles = subtitles
         self.subtitle_langs = subtitle_langs
+        self.max_concurrent = max(1, int(max_concurrent or DEFAULT_MAX_CONCURRENT_DOWNLOADS))
+        self.speed_limit_kbps = max(0, int(speed_limit_kbps or 0))
         self.items = items
         self.history = history
         self.log = logging.getLogger("yt_ara.dl_worker")
@@ -82,9 +87,11 @@ class DownloadWorker(QThread):
             os.makedirs(target_dir, exist_ok=True)
             service = DownloadService(
                 target_dir, quality=self.quality, ffmpeg_path=self.ffmpeg_path,
-                subtitles=self.subtitles, subtitle_langs=self.subtitle_langs)
+                subtitles=self.subtitles, subtitle_langs=self.subtitle_langs,
+                speed_limit_kbps=self.speed_limit_kbps)
             with self._lock:
                 self._active_services.append(service)
+                self.active_count_changed.emit(len(self._active_services))
             try:
                 path = service.download(
                     url,
@@ -107,8 +114,9 @@ class DownloadWorker(QThread):
                 with self._lock:
                     if service in self._active_services:
                         self._active_services.remove(service)
+                    self.active_count_changed.emit(len(self._active_services))
 
-        with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_DOWNLOADS) as pool:
+        with ThreadPoolExecutor(max_workers=self.max_concurrent) as pool:
             list(pool.map(work, self.items))
         self.all_done.emit(counter["done"], total)
 
