@@ -27,19 +27,25 @@ QCalendarWidget QToolButton { color: #eeeeee; }
 """
 
 _LIGHT_QSS = """
+QToolTip { color: #202020; background-color: #ffffe1; border: 1px solid #999; }
 QLineEdit, QListWidget, QTableWidget, QDateEdit, QComboBox {
+    background-color: #ffffff; color: #202020;
     border: 1px solid #b8b8b8; border-radius: 3px; padding: 3px;
-    selection-background-color: #0078d4;
+    selection-background-color: #0078d4; selection-color: #ffffff;
 }
-QGroupBox { border: 1px solid #c8c8c8; border-radius: 5px; margin-top: 10px; }
+QGroupBox { border: 1px solid #c8c8c8; border-radius: 5px; margin-top: 10px; color: #202020; }
 QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 4px; }
 QPushButton {
-    background-color: #f3f3f3; border: 1px solid #adadad; border-radius: 4px;
-    padding: 6px 14px;
+    background-color: #f3f3f3; color: #202020;
+    border: 1px solid #adadad; border-radius: 4px; padding: 6px 14px;
 }
 QPushButton:hover { background-color: #e5f1fb; border-color: #0078d4; }
 QPushButton:pressed { background-color: #cce4f7; }
-QPushButton:disabled { color: #999; }
+QPushButton:disabled { color: #999; background-color: #f3f3f3; }
+QHeaderView::section {
+    background-color: #f3f3f3; color: #202020; border: 1px solid #c8c8c8; padding: 4px;
+}
+QCalendarWidget QToolButton { color: #202020; }
 """
 
 
@@ -70,6 +76,25 @@ def _dark_palette() -> QPalette:
     return p
 
 
+def _light_palette() -> QPalette:
+    p = QPalette()
+    p.setColor(QPalette.Window, QColor(240, 240, 240))
+    p.setColor(QPalette.WindowText, QColor(32, 32, 32))
+    p.setColor(QPalette.Base, QColor(255, 255, 255))
+    p.setColor(QPalette.AlternateBase, QColor(245, 245, 245))
+    p.setColor(QPalette.ToolTipBase, QColor(255, 255, 225))
+    p.setColor(QPalette.ToolTipText, QColor(32, 32, 32))
+    p.setColor(QPalette.Text, QColor(32, 32, 32))
+    p.setColor(QPalette.Button, QColor(243, 243, 243))
+    p.setColor(QPalette.ButtonText, QColor(32, 32, 32))
+    p.setColor(QPalette.BrightText, QColor(200, 0, 0))
+    p.setColor(QPalette.Link, QColor(0, 90, 200))
+    p.setColor(QPalette.Highlight, QColor(0, 120, 212))
+    p.setColor(QPalette.HighlightedText, QColor(255, 255, 255))
+    p.setColor(QPalette.PlaceholderText, QColor(120, 120, 120))
+    return p
+
+
 def apply_theme(app: QApplication, mode: str) -> None:
     dark = system_is_dark() if mode == "system" else (mode == "dark")
     app.setStyle("Fusion")
@@ -77,7 +102,13 @@ def apply_theme(app: QApplication, mode: str) -> None:
         app.setPalette(_dark_palette())
         app.setStyleSheet(_DARK_QSS)
     else:
-        app.setPalette(app.style().standardPalette())
+        # NOT app.style().standardPalette(): Qt6/Windows'ta bu, stilden
+        # bagimsiz sabit bir palet degildir -- isletim sistemi koyu
+        # temadaysa "standart" palet de koyulasabilir ("acik tema secince
+        # de her sey koyu kaliyor, dugme yazilari gorunmuyor" hatasina yol
+        # acar). Bu yuzden acik mod icin de sabit, elle tanimli bir palet
+        # kullanilir (bkz. _dark_palette).
+        app.setPalette(_light_palette())
         app.setStyleSheet(_LIGHT_QSS)
     # Sonraki pencerelerin (henuz acilmamis dialoglar dahil) baslik
     # cubugunu dogru modda acmasi icin son secilen koyuluk saklanir.
