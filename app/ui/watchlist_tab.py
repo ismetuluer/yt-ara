@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.services.watchlist_service import WatchlistService
+from app.ui.theme import ACCENT_BUTTON_OBJECT_NAME
 
 
 class WatchlistTab(QWidget):
@@ -48,7 +49,8 @@ class WatchlistTab(QWidget):
         self.channel_edit.setPlaceholderText("Kanal adresi")
         self.keyword_edit = QLineEdit()
         self.keyword_edit.setPlaceholderText("Anahtar kelime (boş = tüm videolar)")
-        self.add_btn = QPushButton("İzlemeye Al")
+        self.add_btn = QPushButton("İzlemeye al")
+        self.add_btn.setObjectName(ACCENT_BUTTON_OBJECT_NAME)
         self.add_btn.clicked.connect(self._add_watch)
         add_row.addWidget(self.channel_edit, 2)
         add_row.addWidget(self.keyword_edit, 1)
@@ -62,16 +64,16 @@ class WatchlistTab(QWidget):
         layout.addWidget(self.watch_list)
 
         watch_btn_row = QHBoxLayout()
-        self.remove_watch_btn = QPushButton("İzlemeyi Bırak")
+        self.remove_watch_btn = QPushButton("İzlemeyi bırak")
         self.remove_watch_btn.clicked.connect(self._remove_selected_watch)
-        self.check_now_btn = QPushButton("Şimdi Denetle")
+        self.check_now_btn = QPushButton("Şimdi denetle")
         self.check_now_btn.clicked.connect(self._check_now)
         watch_btn_row.addWidget(self.remove_watch_btn)
         watch_btn_row.addWidget(self.check_now_btn)
         watch_btn_row.addStretch(1)
         layout.addLayout(watch_btn_row)
 
-        layout.addWidget(QLabel("Bulunan Videolar:"))
+        layout.addWidget(QLabel("Bulunan videolar"))
         self.found_table = QTableWidget(0, 4)
         self.found_table.setHorizontalHeaderLabels(
             ["Video Başlığı", "Kanal", "Bulunma Zamanı", "Video Adresi"])
@@ -143,8 +145,8 @@ class WatchlistTab(QWidget):
         watch = watches.get(watch_id)
         menu = QMenu(self)
         toggle_act = menu.addAction(
-            "Pasif Yap" if watch and watch.get("active", True) else "Aktif Yap")
-        remove_act = menu.addAction("İzlemeyi Bırak")
+            "Pasif yap" if watch and watch.get("active", True) else "Aktif yap")
+        remove_act = menu.addAction("İzlemeyi bırak")
         action = menu.exec(self.watch_list.viewport().mapToGlobal(pos))
         if action == toggle_act and watch:
             self.watchlist.set_active(watch_id, not watch.get("active", True))

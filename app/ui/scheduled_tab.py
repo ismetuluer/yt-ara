@@ -40,7 +40,7 @@ class ScheduledTab(QWidget):
         btn_row = QHBoxLayout()
         self.refresh_btn = QPushButton("Yenile")
         self.refresh_btn.clicked.connect(self.refresh)
-        self.cancel_btn = QPushButton("Seçilenleri İptal Et")
+        self.cancel_btn = QPushButton("Seçilenleri iptal et")
         self.cancel_btn.clicked.connect(self._cancel_selected)
         btn_row.addWidget(self.refresh_btn)
         btn_row.addWidget(self.cancel_btn)
@@ -75,7 +75,7 @@ class ScheduledTab(QWidget):
         if not ids:
             return
         answer = QMessageBox.question(
-            self, "İptal Et",
+            self, "İptal et",
             f"{len(ids)} zamanlanmış indirme iptal edilecek. Devam edilsin mi?")
         if answer != QMessageBox.Yes:
             return
@@ -87,7 +87,7 @@ class ScheduledTab(QWidget):
         if self.table.itemAt(pos) is None:
             return
         menu = QMenu(self)
-        cancel_act = menu.addAction("İptal Et")
+        cancel_act = menu.addAction("İptal et")
         action = menu.exec(self.table.viewport().mapToGlobal(pos))
         if action == cancel_act:
             self._cancel_selected()

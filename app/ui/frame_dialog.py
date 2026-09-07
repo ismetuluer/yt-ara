@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 from app.services.ffmpeg_service import (
     FFmpegError, ffmpeg_available, parse_timecode,
 )
+from app.ui.theme import ACCENT_BUTTON_OBJECT_NAME
 from app.workers.frame_worker import FrameWorker
 
 
@@ -27,7 +28,7 @@ class FrameDialog(QDialog):
         self.log = logging.getLogger("yt_ara.frame_dialog")
         self._worker: FrameWorker | None = None
 
-        self.setWindowTitle("Görüntü Çıkar")
+        self.setWindowTitle("Görüntü çıkar")
         self.setMinimumSize(520, 320)
         from app.ui.theme import sync_titlebar
         sync_titlebar(self)
@@ -45,7 +46,7 @@ class FrameDialog(QDialog):
         self.dir_edit = QLineEdit()
         default_dir = os.path.join(os.path.dirname(self.video_path), "kareler")
         self.dir_edit.setText(default_dir)
-        browse_btn = QPushButton("Gözat...")
+        browse_btn = QPushButton("Gözat")
         browse_btn.clicked.connect(self._browse_dir)
         dir_row.addWidget(self.dir_edit, 1)
         dir_row.addWidget(browse_btn)
@@ -97,7 +98,8 @@ class FrameDialog(QDialog):
 
         # Butonlar
         btn_row = QHBoxLayout()
-        self.extract_btn = QPushButton("Görüntüleri Çıkar")
+        self.extract_btn = QPushButton("Görüntüleri çıkar")
+        self.extract_btn.setObjectName(ACCENT_BUTTON_OBJECT_NAME)
         self.extract_btn.clicked.connect(self._start)
         self.cancel_btn = QPushButton("İptal")
         self.cancel_btn.setVisible(False)
@@ -131,7 +133,7 @@ class FrameDialog(QDialog):
             return
         output_dir = self.dir_edit.text().strip()
         if not output_dir:
-            QMessageBox.warning(self, "Klasör Gerekli", "Çıktı klasörü boş olamaz.")
+            QMessageBox.warning(self, "Klasör gerekli", "Çıktı klasörü boş olamaz.")
             return
         image_format = self.format_combo.currentData()
         base_name = self._safe_base_name(self.video_title)
@@ -139,16 +141,16 @@ class FrameDialog(QDialog):
         if self.specific_check.isChecked():
             raw = self.times_edit.text().strip()
             if not raw:
-                QMessageBox.warning(self, "Zaman Gerekli",
+                QMessageBox.warning(self, "Zaman gerekli",
                                     "En az bir zaman noktası girin.")
                 return
             try:
                 times = [parse_timecode(t) for t in raw.split(",") if t.strip()]
             except ValueError as exc:
-                QMessageBox.warning(self, "Geçersiz Zaman", str(exc))
+                QMessageBox.warning(self, "Geçersiz zaman", str(exc))
                 return
             if not times:
-                QMessageBox.warning(self, "Zaman Gerekli",
+                QMessageBox.warning(self, "Zaman gerekli",
                                     "En az bir zaman noktası girin.")
                 return
             self._worker = FrameWorker(
@@ -159,11 +161,11 @@ class FrameDialog(QDialog):
             try:
                 interval = int(raw)
             except ValueError:
-                QMessageBox.warning(self, "Geçersiz Aralık",
+                QMessageBox.warning(self, "Geçersiz aralık",
                                     "Aralık bir tam sayı (saniye) olmalıdır.")
                 return
             if interval <= 0:
-                QMessageBox.warning(self, "Geçersiz Aralık",
+                QMessageBox.warning(self, "Geçersiz aralık",
                                     "Aralık 0'dan büyük olmalıdır.")
                 return
             self._worker = FrameWorker(

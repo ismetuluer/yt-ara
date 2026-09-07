@@ -18,6 +18,7 @@ from app.services.download_history import DownloadHistory
 from app.services.download_service import QUALITY_OPTIONS
 from app.services.ffmpeg_service import ffmpeg_available, find_ffmpeg
 from app.services.scheduled_download_service import ScheduledDownloadService
+from app.ui.theme import ACCENT_BUTTON_OBJECT_NAME
 from app.utils.paths import default_download_dir
 from app.workers.download_worker import DownloadWorker
 from app.workers.ffmpeg_download_worker import FFmpegDownloadWorker
@@ -45,7 +46,7 @@ class DownloadDialog(QDialog):
         self._byte_progress: dict[str, tuple[int, int]] = {}
         self._done_count = 0
 
-        self.setWindowTitle("Video İndir")
+        self.setWindowTitle("Video indir")
         self.setMinimumSize(560, 420)
         from app.ui.theme import sync_titlebar
         sync_titlebar(self)
@@ -57,11 +58,11 @@ class DownloadDialog(QDialog):
 
         # Klasor secimi
         dir_row = QHBoxLayout()
-        dir_row.addWidget(QLabel("İndirme Klasörü:"))
+        dir_row.addWidget(QLabel("İndirme klasörü"))
         self.dir_edit = QLabel()
         self.dir_edit.setText(self.settings.download_dir or default_download_dir())
         self.dir_edit.setWordWrap(True)
-        browse_btn = QPushButton("Gözat...")
+        browse_btn = QPushButton("Gözat")
         browse_btn.clicked.connect(self._browse_dir)
         dir_row.addWidget(self.dir_edit, 1)
         dir_row.addWidget(browse_btn)
@@ -69,7 +70,7 @@ class DownloadDialog(QDialog):
 
         # Kalite
         qual_row = QHBoxLayout()
-        qual_row.addWidget(QLabel("Kalite:"))
+        qual_row.addWidget(QLabel("Kalite"))
         self.quality_combo = QComboBox()
         for label, _ in QUALITY_OPTIONS:
             self.quality_combo.addItem(label)
@@ -86,7 +87,7 @@ class DownloadDialog(QDialog):
 
         # Zamanlama
         schedule_row = QHBoxLayout()
-        self.schedule_check = QCheckBox("Daha sonra indir (zamanla):")
+        self.schedule_check = QCheckBox("Daha sonra indir")
         self.schedule_check.toggled.connect(self._on_schedule_toggled)
         self.schedule_edit = QDateTimeEdit(QDateTime.currentDateTime().addSecs(3600))
         self.schedule_edit.setCalendarPopup(True)
@@ -99,7 +100,7 @@ class DownloadDialog(QDialog):
         layout.addLayout(schedule_row)
 
         # Video listesi
-        layout.addWidget(QLabel("İndirilecek Videolar:"))
+        layout.addWidget(QLabel("İndirilecek videolar"))
         self.list_widget = QListWidget()
         layout.addWidget(self.list_widget, 1)
 
@@ -124,12 +125,13 @@ class DownloadDialog(QDialog):
 
         # Butonlar
         btn_row = QHBoxLayout()
-        self.download_btn = QPushButton("İndirmeye Başla")
+        self.download_btn = QPushButton("İndir")
+        self.download_btn.setObjectName(ACCENT_BUTTON_OBJECT_NAME)
         self.download_btn.clicked.connect(self._start)
         self.cancel_btn = QPushButton("İptal")
         self.cancel_btn.setVisible(False)
         self.cancel_btn.clicked.connect(self._cancel)
-        self.background_btn = QPushButton("Arkaplana Gönder")
+        self.background_btn = QPushButton("Arka plana gönder")
         self.background_btn.setToolTip(
             "Pencereyi gizler; indirme arka planda devam eder.")
         self.background_btn.clicked.connect(self.hide)
@@ -174,13 +176,13 @@ class DownloadDialog(QDialog):
 
         if not ffmpeg_available():
             box = QMessageBox(self)
-            box.setWindowTitle("FFmpeg Bulunamadı")
+            box.setWindowTitle("FFmpeg bulunamadı")
             box.setText(
                 "Yüksek kaliteli birleştirme için FFmpeg gerekir (yaklaşık 140 MB, "
                 "bir kereliğine indirilir).\nFFmpeg olmadan yalnızca tek dosya "
                 "(daha düşük kalite olabilir) indirilebilir.")
-            download_btn = box.addButton("FFmpeg'i İndir", QMessageBox.AcceptRole)
-            box.addButton("FFmpeg Olmadan Devam Et", QMessageBox.DestructiveRole)
+            download_btn = box.addButton("FFmpeg'i indir", QMessageBox.AcceptRole)
+            box.addButton("FFmpeg olmadan devam et", QMessageBox.DestructiveRole)
             cancel_btn = box.addButton("Vazgeç", QMessageBox.RejectRole)
             box.exec()
             clicked = box.clickedButton()
@@ -287,7 +289,7 @@ class DownloadDialog(QDialog):
 
     def _on_schedule_toggled(self, checked: bool):
         self.schedule_edit.setEnabled(checked)
-        self.download_btn.setText("Kuyruğa Ekle" if checked else "İndirmeye Başla")
+        self.download_btn.setText("Kuyruğa ekle" if checked else "İndir")
 
     def _on_subtitle_toggled(self, checked: bool):
         self.settings.download_subtitles = checked
@@ -355,7 +357,7 @@ class DownloadDialog(QDialog):
                 f"Bitti: {done}/{total} video indirildi, {total - done} hata.")
         if self.settings.notify_download_complete:
             QMessageBox.information(
-                self, "İndirme Tamamlandı",
+                self, "İndirme tamamlandı",
                 f"{done}/{total} video indirildi.\nKlasör: {self.dir_edit.text()}")
 
     def _on_notify_toggled(self, checked: bool):

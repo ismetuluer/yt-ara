@@ -25,7 +25,7 @@ class VideoInfoDialog(QDialog):
         self.log = logging.getLogger("yt_ara.info_dialog")
         self._service = YtDlpService()
 
-        self.setWindowTitle("Video Bilgisi")
+        self.setWindowTitle("Video bilgisi")
         self.setMinimumSize(480, 360)
         from app.ui.theme import sync_titlebar
         sync_titlebar(self)
@@ -50,11 +50,11 @@ class VideoInfoDialog(QDialog):
         layout.addStretch(1)
 
         btn_row = QHBoxLayout()
-        self.open_btn = QPushButton("Tarayıcıda Aç")
+        self.open_btn = QPushButton("Tarayıcıda aç")
         self.open_btn.clicked.connect(lambda: webbrowser.open(self.video.url))
         self.download_btn = QPushButton("İndir")
         self.download_btn.clicked.connect(self._download)
-        self.frames_btn = QPushButton("Görüntü Çıkar")
+        self.frames_btn = QPushButton("Görüntü çıkar")
         self.frames_btn.clicked.connect(self._frames)
         self.close_btn = QPushButton("Kapat")
         self.close_btn.clicked.connect(self.reject)
