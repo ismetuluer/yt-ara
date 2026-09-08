@@ -556,7 +556,11 @@ class MainWindow(QMainWindow):
         self.download_all_btn = QPushButton(icon("download"), "Hepsini indir")
         self.download_all_btn.setToolTip("Listedeki tüm videoları indirme penceresinde açar.")
         self.download_all_btn.clicked.connect(self.download_all)
-        for b in (self.copy_all_btn, self.txt_btn, self.download_selected_btn, self.download_all_btn):
+        self.clear_results_btn = QPushButton(icon("clear"), "Listeyi temizle")
+        self.clear_results_btn.setToolTip("Sonuç listesindeki tüm videoları listeden kaldırır.")
+        self.clear_results_btn.clicked.connect(self._clear_results)
+        for b in (self.copy_all_btn, self.txt_btn, self.download_selected_btn,
+                  self.download_all_btn, self.clear_results_btn):
             btn_row.addWidget(b)
         res_layout.addLayout(btn_row)
         self.table.itemSelectionChanged.connect(

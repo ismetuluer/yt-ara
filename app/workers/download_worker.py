@@ -50,16 +50,21 @@ class DownloadWorker(QThread):
         self._cancel_event = threading.Event()
         self._lock = threading.Lock()
         self._active_services: list[DownloadService] = []
-        # Birden fazla kanaldan toplu indirmede dosyalarin karismamasi icin
-        # her kanal kendi alt klasorune indirilir. Tek kanal/tek videoluk
-        # indirmelerde gereksiz alt klasor olusturulmaz.
-        channels = {item.get("channel_title") for item in items if item.get("channel_title")}
-        self._organize_by_channel = len(channels) > 1
 
     def _item_dir(self, item: dict) -> str:
-        if not self._organize_by_channel:
+        """Her video, kanal adi bilinen bir alt klasore indirilir.
+
+        Onceden yalnizca birden fazla FARKLI kanaldan toplu indirmede alt
+        klasor kullanilirdi; tek video/tek kanal indirilirken dogrudan
+        indirme klasorune iniyordu. Kullanici tek tek indirirken de kanal
+        klasorune inmesini istedi -- artik kanal adi biliniyorsa (video
+        listesinden veya "Kanallara ekle" akisindan geldiyse) her zaman
+        kullanilir; yalnizca kanal bilgisi hic yoksa (ornegin gecmisten
+        tekrar indirme) dogrudan indirme klasorune duser.
+        """
+        channel = item.get("channel_title")
+        if not channel:
             return self.download_dir
-        channel = item.get("channel_title") or "Bilinmeyen Kanal"
         return os.path.join(self.download_dir, sanitize_filename(channel))
 
     def cancel(self) -> None:

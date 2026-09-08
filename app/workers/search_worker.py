@@ -17,7 +17,7 @@ from PySide6.QtCore import QThread, Signal
 
 from app.services.channel_resolver import ChannelInfo
 from app.services.search.base_search_service import SearchEngine
-from app.services.search.ytdlp_search_service import _exact_phrase_match
+from app.services.search.ytdlp_search_service import _exact_phrase_match, _turkish_fold
 from app.services.ytdlp_service import YtDlpError
 from app.services.youtube_service import YouTubeError
 
@@ -139,7 +139,7 @@ class SearchWorker(QThread):
                 if channel_id:
                     ids.add(channel_id)
                 if title:
-                    titles.add(title.strip().casefold())
+                    titles.add(_turkish_fold(title))
             except Exception as exc:
                 self.log.warning("Haric tutulacak kanal cozumlenemedi: %s (%s)", raw, exc)
         return ids, titles
@@ -149,7 +149,7 @@ class SearchWorker(QThread):
         if video.channel_id and video.channel_id in exclude_ids:
             return True
         if exclude_titles and video.channel_title:
-            return video.channel_title.strip().casefold() in exclude_titles
+            return _turkish_fold(video.channel_title) in exclude_titles
         return False
 
     def _run_search(self, targets, channels, exclude_ids: set, exclude_titles: set) -> None:

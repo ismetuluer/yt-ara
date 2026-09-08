@@ -263,11 +263,11 @@ class TestDownloadService(unittest.TestCase):
     def test_quality_format_mapping(self):
         svc = DownloadService("C:/tmp", quality="720p")
         self.assertIn("height<=720", svc._format_for("720p"))
-        self.assertIn("bestvideo+bestaudio", svc._format_for("En İyi"))
+        self.assertIn("bestvideo*+bestaudio", svc._format_for("En İyi"))
 
     def test_unknown_quality_falls_back(self):
         svc = DownloadService("C:/tmp", quality="Bilinmeyen")
-        self.assertIn("bestvideo+bestaudio", svc._format_for("Bilinmeyen"))
+        self.assertIn("bestvideo*+bestaudio", svc._format_for("Bilinmeyen"))
 
     def test_resolved_path(self):
         svc = DownloadService("C:/tmp")

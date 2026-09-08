@@ -20,11 +20,18 @@ _INVALID_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _RESERVED = re.compile(r'^(con|prn|aux|nul|com[1-9]|lpt[1-9])$', re.IGNORECASE)
 
 # Kalite secenekleri: (etiket, yt-dlp format secimi)
+# "bestvideo" (yildizsiz) yt-dlp'yi belirli video-only kodeklerle sinirlar;
+# bazi videolarda (ozellikle yalnizca DASH/HLS formatlari sunulanlarda) bu
+# hicbir formatla eslesmeyip "Requested format is not available" hatasina
+# yol aciyordu. "bestvideo*" (yildizli) tum video-only formatlari (kodek
+# farketmeksizin) degerlendirir; sonunda ayrica "/best" ile TEK dosyalik
+# (onceden birlestirilmis) formatlara da dusulur -- boylece secilen kalite
+# hicbir sekilde eslesmezse bile indirme tamamen basarisiz olmaz.
 QUALITY_OPTIONS = [
-    ("En İyi", "bestvideo+bestaudio/best"),
-    ("1080p", "bestvideo[height<=1080]+bestaudio/best[height<=1080]"),
-    ("720p", "bestvideo[height<=720]+bestaudio/best[height<=720]"),
-    ("480p", "bestvideo[height<=480]+bestaudio/best[height<=480]"),
+    ("En İyi", "bestvideo*+bestaudio/best"),
+    ("1080p", "bestvideo*[height<=1080]+bestaudio/best[height<=1080]/best"),
+    ("720p", "bestvideo*[height<=720]+bestaudio/best[height<=720]/best"),
+    ("480p", "bestvideo*[height<=480]+bestaudio/best[height<=480]/best"),
     ("En İyi Tek Dosya", "best"),
 ]
 
