@@ -9,10 +9,10 @@ from urllib.parse import parse_qs, urlparse
 from PySide6.QtCore import QByteArray, QDate, Qt, QTimer
 from PySide6.QtGui import QColor, QGuiApplication, QKeySequence
 from PySide6.QtWidgets import (
-    QAbstractItemView, QApplication, QCheckBox, QDateEdit, QFileDialog, QGroupBox,
+    QAbstractItemView, QApplication, QCheckBox, QDateEdit, QFileDialog, QFrame,
     QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit, QListWidget,
     QListWidgetItem, QMainWindow, QMenu, QMessageBox, QProgressBar, QPushButton,
-    QSizePolicy, QSplitter, QTabWidget, QTableWidget, QTableWidgetItem, QVBoxLayout,
+    QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout,
     QWidget,
 )
 
@@ -28,7 +28,12 @@ from app.services.settings_service import SettingsService
 from app.services.watchlist_service import WatchlistService
 from app.ui.scheduled_tab import ScheduledTab
 from app.ui.settings_dialog import SettingsDialog
-from app.ui.theme import ACCENT_BUTTON_OBJECT_NAME, PILL_BUTTON_OBJECT_NAME, apply_theme
+from app.ui.theme import (
+    ACCENT_BUTTON_OBJECT_NAME, BETA_BADGE_OBJECT_NAME, CARD_OBJECT_NAME,
+    MUTED_LABEL_OBJECT_NAME, NAV_LIST_OBJECT_NAME, PAGE_TITLE_OBJECT_NAME,
+    PILL_BUTTON_OBJECT_NAME, SECTION_LABEL_OBJECT_NAME, SIDEBAR_OBJECT_NAME,
+    apply_theme,
+)
 from app.ui.watchlist_tab import WatchlistTab
 from app.utils.paths import default_download_dir
 from app.workers.app_update_worker import AppUpdateWorker
@@ -40,6 +45,11 @@ from app.workers.watchlist_worker import WatchlistWorker
 COL_NO, COL_TITLE, COL_CHANNEL, COL_DATE, COL_URL = range(5)
 HEADERS = ["No", "Video Başlığı", "Kanal", "Yayın Tarihi", "Video Adresi"]
 CACHE_TTL = 300  # saniye; ayni aramanin tekrarini onler
+# Sol kenar cubugundaki gezinme baslikları; sirasi QStackedWidget'taki
+# sayfa sirasiyla birebir ayni olmalidir.
+NAV_ITEMS = ["Sonuçlar", "Geçmiş", "Zamanlanmış", "İzleme listesi"]
+# Bolme durumu kaydinin duzen surumu (bkz. _restore_window_state).
+_SPLITTER_STATE_VERSION = "v2:"
 DOWNLOADED_COLOR = QColor(198, 239, 206)  # indirilen videolari vurgulamak icin
 # Vurgu rengi acik oldugundan, koyu temada da okunabilmesi icin metin
 # rengi de birlikte sabitlenir (tema rengine birakilmaz).
@@ -134,166 +144,260 @@ class MainWindow(QMainWindow):
 
     # ================================================================ arayuz
     def _build_ui(self):
+        """Sol kenar cubugu + sag icerik duzeni.
+
+        Onceki duzende her sey (arama olcutleri, kanallar, sonuclar) alt
+        alta diziliyordu; genis ama kisa ekranlarda (dizustu, ultra-wide)
+        dikey alan yetmiyordu. Degismeyen denetimler (kanallar, gezinme,
+        ayarlar) sol kenar cubuguna alinarak dikey yigin yataya dagitildi.
+        """
         central = QWidget()
-        root = QVBoxLayout(central)
-        root.setContentsMargins(10, 10, 10, 6)
+        root = QHBoxLayout(central)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
         self.setCentralWidget(central)
 
-        # Baslik + ayarlar
-        top = QHBoxLayout()
-        title = QLabel("YouTube Gelişmiş Arama")
+        self.splitter = QSplitter(Qt.Horizontal)
+        self.splitter.addWidget(self._build_sidebar())
+        self.splitter.addWidget(self._build_content())
+        self.splitter.setStretchFactor(0, 0)
+        self.splitter.setStretchFactor(1, 1)
+        self.splitter.setHandleWidth(1)
+        # Ayirici surukletildiginde bir bolum tamamen kaybolmasin.
+        self.splitter.setChildrenCollapsible(False)
+        self.splitter.setSizes([260, 780])
+        root.addWidget(self.splitter)
+
+        self._update_method_label()
+        self._restore_window_state()
+
+        self.status_progress = QProgressBar()
+        self.status_progress.setMaximumWidth(160)
+        self.status_progress.setMaximumHeight(14)
+        self.status_progress.setTextVisible(False)
+        self.status_progress.setRange(0, 0)
+        self.status_progress.setVisible(False)
+        self.statusBar().addPermanentWidget(self.status_progress)
+        self.statusBar().showMessage("Hazır")
+
+    # ------------------------------------------------------------ kenar cubugu
+    def _build_sidebar(self) -> QWidget:
+        side = QWidget()
+        side.setObjectName(SIDEBAR_OBJECT_NAME)
+        side.setMinimumWidth(210)
+        side.setMaximumWidth(380)
+        lay = QVBoxLayout(side)
+        lay.setContentsMargins(14, 14, 14, 12)
+        lay.setSpacing(8)
+
+        # Marka satiri
+        brand = QHBoxLayout()
+        brand.setSpacing(6)
+        title = QLabel("YouTube Arama")
         font = title.font()
-        font.setPointSize(14)
+        font.setPointSize(12)
         font.setBold(True)
         title.setFont(font)
         beta_label = QLabel("BETA")
-        beta_label.setStyleSheet(
-            "color: #b45309; background-color: #fef3c7; border: 1px solid #d97706;"
-            " border-radius: 3px; padding: 1px 6px; font-weight: bold; font-size: 10px;")
+        beta_label.setObjectName(BETA_BADGE_OBJECT_NAME)
         beta_label.setToolTip(
             "Bu uygulama henüz kararlı (stable) sürüm değil; hatalarla karşılaşabilirsiniz.")
+        brand.addWidget(title)
+        brand.addWidget(beta_label)
+        brand.addStretch(1)
+        lay.addLayout(brand)
+        lay.addSpacing(4)
+
+        # Gezinme (eski sekmelerin yerini alir)
+        self.nav_list = QListWidget()
+        self.nav_list.setObjectName(NAV_LIST_OBJECT_NAME)
+        for label in NAV_ITEMS:
+            self.nav_list.addItem(QListWidgetItem(label))
+        self.nav_list.setCurrentRow(0)
+        self.nav_list.setFocusPolicy(Qt.NoFocus)
+        self.nav_list.setFixedHeight(len(NAV_ITEMS) * 36 + 8)
+        self.nav_list.currentRowChanged.connect(self._on_nav_changed)
+        lay.addWidget(self.nav_list)
+        lay.addSpacing(6)
+
+        # Kanallar
+        lay.addWidget(self._section_label("KANALLAR"))
+        ch_hint = QLabel("Kanal eklemezsen tüm YouTube'da ararız.")
+        ch_hint.setObjectName(MUTED_LABEL_OBJECT_NAME)
+        ch_hint.setWordWrap(True)
+        lay.addWidget(ch_hint)
+
+        add_row = QHBoxLayout()
+        add_row.setSpacing(6)
+        self.channel_edit = QLineEdit()
+        self.channel_edit.setPlaceholderText("Kanal adresi yapıştır")
+        self.channel_edit.returnPressed.connect(self.add_channel)
+        self.add_channel_btn = QPushButton("Ekle")
+        self.add_channel_btn.clicked.connect(self.add_channel)
+        add_row.addWidget(self.channel_edit, 1)
+        add_row.addWidget(self.add_channel_btn)
+        lay.addLayout(add_row)
+
+        self.channel_list = QListWidget()
+        self.channel_list.setMinimumHeight(80)
+        self.channel_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.channel_list.itemDoubleClicked.connect(self._rename_channel)
+        self.channel_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.channel_list.customContextMenuRequested.connect(self._channel_context_menu)
+        lay.addWidget(self.channel_list, 1)
+
+        # Kenar cubugu dar oldugundan dort dugme tek satira sigmaz; iki
+        # satira bolunur.
+        self.select_all_channels_btn = QPushButton("Hepsini seç")
+        self.select_all_channels_btn.clicked.connect(self._select_all_channels)
+        self.clear_channel_selection_btn = QPushButton("Temizle")
+        self.clear_channel_selection_btn.clicked.connect(self._clear_channel_selection)
+        self.remove_channel_btn = QPushButton("Sil")
+        self.remove_channel_btn.clicked.connect(self.remove_channel)
+        self.rename_channel_btn = QPushButton("Adlandır")
+        self.rename_channel_btn.clicked.connect(self._rename_selected_channel)
+        for first, second in ((self.select_all_channels_btn, self.clear_channel_selection_btn),
+                              (self.remove_channel_btn, self.rename_channel_btn)):
+            row = QHBoxLayout()
+            row.setSpacing(6)
+            row.addWidget(first, 1)
+            row.addWidget(second, 1)
+            lay.addLayout(row)
+
+        self.exclude_channels_check = QCheckBox("Bu kanalları hariç tut")
+        self.exclude_channels_check.setToolTip(
+            "Açıkken, işaretli kanallar arama kapsamı değil; tüm YouTube'da "
+            "arayıp bu kanalların videolarını sonuçlardan çıkarır.")
+        lay.addWidget(self.exclude_channels_check)
+
+        self._load_saved_channels()
+
+        lay.addSpacing(6)
         self.downloads_btn = QPushButton("İndirmeler")
         self.downloads_btn.setVisible(False)
         self.downloads_btn.clicked.connect(self._show_download_dialogs)
+        lay.addWidget(self.downloads_btn)
         self.settings_btn = QPushButton("Ayarlar")
         self.settings_btn.clicked.connect(self.open_settings)
+        lay.addWidget(self.settings_btn)
+        return side
+
+    @staticmethod
+    def _section_label(text: str) -> QLabel:
+        label = QLabel(text)
+        label.setObjectName(SECTION_LABEL_OBJECT_NAME)
+        return label
+
+    # ------------------------------------------------------------ icerik alani
+    def _build_content(self) -> QWidget:
+        content = QWidget()
+        lay = QVBoxLayout(content)
+        lay.setContentsMargins(18, 14, 18, 8)
+        lay.setSpacing(12)
+
+        head = QHBoxLayout()
+        self.page_title = QLabel(NAV_ITEMS[0])
+        self.page_title.setObjectName(PAGE_TITLE_OBJECT_NAME)
         self.method_label = QLabel()
-        self.method_label.setStyleSheet("color: #888;")
-        top.addWidget(title)
-        top.addWidget(beta_label)
-        top.addStretch(1)
-        top.addWidget(self.method_label)
-        top.addWidget(self.downloads_btn)
-        top.addWidget(self.settings_btn)
-        root.addLayout(top)
-        self._update_method_label()
+        self.method_label.setObjectName(MUTED_LABEL_OBJECT_NAME)
+        head.addWidget(self.page_title)
+        head.addStretch(1)
+        head.addWidget(self.method_label)
+        lay.addLayout(head)
 
-        # --- Arama olcutleri
-        crit = QGroupBox("Ara")
-        crit_layout = QVBoxLayout(crit)
+        lay.addWidget(self._build_search_card())
 
+        self.pages = QStackedWidget()
+        self._build_pages()
+        lay.addWidget(self.pages, 1)
+        return content
+
+    def _build_search_card(self) -> QWidget:
+        """Arama olcutleri: uc kompakt satirda tek bir kart icinde."""
+        self.search_card = QFrame()
+        self.search_card.setObjectName(CARD_OBJECT_NAME)
+        card = QVBoxLayout(self.search_card)
+        card.setContentsMargins(14, 12, 14, 12)
+        card.setSpacing(9)
+
+        # 1. satir: arama kutusu + Ara / Iptal
+        row = QHBoxLayout()
+        row.setSpacing(8)
         self.query_edit = QLineEdit()
         self.query_edit.setPlaceholderText("Ne aramak istersin?")
+        self.query_edit.setMinimumHeight(34)
         self.query_edit.returnPressed.connect(self.start_search)
-        crit_layout.addWidget(self.query_edit)
+        self.search_btn = QPushButton("Ara")
+        self.search_btn.setObjectName(ACCENT_BUTTON_OBJECT_NAME)
+        self.search_btn.setMinimumHeight(34)
+        self.search_btn.setMinimumWidth(96)
+        self.search_btn.setCursor(Qt.PointingHandCursor)
+        self.search_btn.clicked.connect(self.start_search)
+        self.cancel_btn = QPushButton("İptal")
+        self.cancel_btn.setMinimumHeight(34)
+        self.cancel_btn.setVisible(False)
+        self.cancel_btn.clicked.connect(self.cancel_search)
+        row.addWidget(self.query_edit, 1)
+        row.addWidget(self.search_btn)
+        row.addWidget(self.cancel_btn)
+        card.addLayout(row)
 
-        # Tam ifade filtresi
-        self.exact_phrase_check = QCheckBox("Tam eşleşme")
-        self.exact_phrase_check.setToolTip(
-            "Açıkken arama ifadesi kelimelere bölünmeden bütün olarak eşleştirilir.")
-        self.exact_phrase_check.setChecked(self.settings.exact_phrase)
-        self.exact_phrase_check.toggled.connect(self._on_exact_phrase_toggled)
-        crit_layout.addWidget(self.exact_phrase_check)
-
-        # Tarih araligi (her zaman etkin; varsayilan olarak bugun)
-        self.date_group = QGroupBox("Tarih")
-        date_layout = QVBoxLayout(self.date_group)
-        date_row = QHBoxLayout()
+        # 2. satir: tarih araligi + tam eslesme
         today = dt.date.today()
+        date_row = QHBoxLayout()
+        date_row.setSpacing(6)
         self.date_from = QDateEdit(today)
         self.date_from.setCalendarPopup(True)
         self.date_from.setDisplayFormat("dd.MM.yyyy")
         self.date_to = QDateEdit(today)
         self.date_to.setCalendarPopup(True)
         self.date_to.setDisplayFormat("dd.MM.yyyy")
-        date_row.addWidget(QLabel("Başlangıç"))
+        from_label = QLabel("Başlangıç")
+        from_label.setObjectName(MUTED_LABEL_OBJECT_NAME)
+        to_label = QLabel("Bitiş")
+        to_label.setObjectName(MUTED_LABEL_OBJECT_NAME)
+        date_row.addWidget(from_label)
         date_row.addWidget(self.date_from)
-        date_row.addSpacing(12)
-        date_row.addWidget(QLabel("Bitiş"))
+        date_row.addSpacing(10)
+        date_row.addWidget(to_label)
         date_row.addWidget(self.date_to)
         date_row.addStretch(1)
-        date_layout.addLayout(date_row)
+        self.exact_phrase_check = QCheckBox("Tam eşleşme")
+        self.exact_phrase_check.setToolTip(
+            "Açıkken arama ifadesi kelimelere bölünmeden bütün olarak eşleştirilir.")
+        self.exact_phrase_check.setChecked(self.settings.exact_phrase)
+        self.exact_phrase_check.toggled.connect(self._on_exact_phrase_toggled)
+        date_row.addWidget(self.exact_phrase_check)
+        card.addLayout(date_row)
 
+        # 3. satir: hazir tarih araliklari
         preset_row = QHBoxLayout()
+        preset_row.setSpacing(6)
         for label, start_back, end_back in DATE_PRESETS:
             btn = QPushButton(label)
             btn.setObjectName(PILL_BUTTON_OBJECT_NAME)
+            btn.setCursor(Qt.PointingHandCursor)
             btn.clicked.connect(
                 lambda _=False, s=start_back, e=end_back: self._apply_date_preset(s, e))
             preset_row.addWidget(btn)
         preset_row.addStretch(1)
-        date_layout.addLayout(preset_row)
-        crit_layout.addWidget(self.date_group)
+        card.addLayout(preset_row)
+        return self.search_card
 
-        # Kanal adresleri
-        ch_group = QGroupBox("Kanallar")
-        ch_layout = QVBoxLayout(ch_group)
-        ch_hint = QLabel("Kanal eklemezsen tüm YouTube'da ararız.")
-        ch_hint.setStyleSheet("color: #888;")
-        ch_layout.addWidget(ch_hint)
-        add_row = QHBoxLayout()
-        self.channel_edit = QLineEdit()
-        self.channel_edit.setPlaceholderText("Kanal adresi yapıştır")
-        self.channel_edit.returnPressed.connect(self.add_channel)
-        self.add_channel_btn = QPushButton("Kanal ekle")
-        self.add_channel_btn.clicked.connect(self.add_channel)
-        add_row.addWidget(self.channel_edit, 1)
-        add_row.addWidget(self.add_channel_btn)
-        ch_layout.addLayout(add_row)
-        self.channel_list = QListWidget()
-        self.channel_list.setMinimumHeight(60)
-        self.channel_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        self.channel_list.itemDoubleClicked.connect(self._rename_channel)
-        self.channel_list.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.channel_list.customContextMenuRequested.connect(self._channel_context_menu)
-        ch_layout.addWidget(self.channel_list, 1)
-        ch_btn_row = QHBoxLayout()
-        self.select_all_channels_btn = QPushButton("Hepsini seç")
-        self.select_all_channels_btn.clicked.connect(self._select_all_channels)
-        self.clear_channel_selection_btn = QPushButton("Seçimi temizle")
-        self.clear_channel_selection_btn.clicked.connect(self._clear_channel_selection)
-        self.remove_channel_btn = QPushButton("Sil")
-        self.remove_channel_btn.clicked.connect(self.remove_channel)
-        self.rename_channel_btn = QPushButton("Yeniden adlandır")
-        self.rename_channel_btn.clicked.connect(self._rename_selected_channel)
-        ch_btn_row.addWidget(self.select_all_channels_btn)
-        ch_btn_row.addWidget(self.clear_channel_selection_btn)
-        ch_btn_row.addWidget(self.remove_channel_btn)
-        ch_btn_row.addWidget(self.rename_channel_btn)
-        ch_btn_row.addStretch(1)
-        ch_layout.addLayout(ch_btn_row)
-        self.exclude_channels_check = QCheckBox("Bu kanalları hariç tut")
-        self.exclude_channels_check.setToolTip(
-            "Açıkken, işaretli kanallar arama kapsamı değil; tüm YouTube'da "
-            "arayıp bu kanalların videolarını sonuçlardan çıkarır.")
-        ch_layout.addWidget(self.exclude_channels_check)
-        # ch_group kasitli olarak `crit` icine degil, asagida kendi
-        # bagimsiz bolme (splitter) parcasina eklenir; boylece kullanici
-        # kanal listesi alanini sonuclardan VE diger arama olcutlerinden
-        # bagimsiz olarak serbestce genisletip daraltabilir.
+    def _on_nav_changed(self, index: int):
+        if index < 0:
+            return
+        self.pages.setCurrentIndex(index)
+        self.page_title.setText(NAV_ITEMS[index])
+        # Arama olcutleri yalnizca "Sonuçlar" sayfasinda anlamli.
+        self.search_card.setVisible(index == 0)
+        self._on_results_tab_changed(index)
 
-        self._load_saved_channels()
-
-        # Arama olcutleri (crit) sabit boyutta kalir, splitter'a DAHIL
-        # EDILMEZ; yalnizca kanal listesi ve sonuc listesi kullanicinin
-        # serbestce boyutlandirabilecegi splitter icinde yer alir --
-        # aksi halde arama olcutleri bolumu genisletilince digerlerinin
-        # yerini kaplayip bos alan birakiyordu.
-        crit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        root.addWidget(crit)
-
-        # --- Ara / Iptal
-        search_row = QHBoxLayout()
-        self.search_btn = QPushButton("Ara")
-        self.search_btn.setObjectName(ACCENT_BUTTON_OBJECT_NAME)
-        sf = self.search_btn.font()
-        sf.setPointSize(12)
-        self.search_btn.setFont(sf)
-        self.search_btn.setMinimumHeight(44)
-        self.search_btn.setCursor(Qt.PointingHandCursor)
-        self.search_btn.clicked.connect(self.start_search)
-        self.cancel_btn = QPushButton("İptal")
-        self.cancel_btn.setMinimumHeight(36)
-        self.cancel_btn.setVisible(False)
-        self.cancel_btn.clicked.connect(self.cancel_search)
-        search_row.addWidget(self.search_btn, 1)
-        search_row.addWidget(self.cancel_btn)
-        root.addLayout(search_row)
-
-        # --- Sonuclar
-        self.results_tabs = QTabWidget()
+    # ------------------------------------------------------------ sayfalar
+    def _build_pages(self):
         search_tab = QWidget()
         res_layout = QVBoxLayout(search_tab)
+        res_layout.setContentsMargins(0, 0, 0, 0)
         res_top = QHBoxLayout()
         self.count_label = QLabel("0 sonuç")
         self.more_btn = QPushButton("Daha fazla")
@@ -344,11 +448,12 @@ class MainWindow(QMainWindow):
         for b in (self.copy_sel_btn, self.copy_all_btn, self.txt_btn, self.download_all_btn):
             btn_row.addWidget(b)
         res_layout.addLayout(btn_row)
-        self.results_tabs.addTab(search_tab, "Sonuçlar")
+        self.pages.addWidget(search_tab)
 
         # --- Gecmis (daha once indirilenler)
         history_tab = QWidget()
         hist_layout = QVBoxLayout(history_tab)
+        hist_layout.setContentsMargins(0, 0, 0, 0)
         self.history_table = QTableWidget(0, 4)
         self.history_table.setHorizontalHeaderLabels(
             ["Video Başlığı", "İndirme Tarihi", "Durum", "Video Adresi"])
@@ -372,44 +477,17 @@ class MainWindow(QMainWindow):
         hist_btn_row.addStretch(1)
         hist_btn_row.addWidget(self.refresh_history_btn)
         hist_layout.addLayout(hist_btn_row)
-        self.results_tabs.addTab(history_tab, "Geçmiş")
+        self.pages.addWidget(history_tab)
 
         # --- Zamanlanmis indirmeler
         self.scheduled_tab = ScheduledTab(self._scheduler)
-        self.results_tabs.addTab(self.scheduled_tab, "Zamanlanmış")
+        self.pages.addWidget(self.scheduled_tab)
 
         # --- Izleme listesi (kanal + anahtar kelime ile otomatik indirme)
         self.watchlist_tab = WatchlistTab(
             self._watchlist, self._resolve_channel_name, self._prime_watch,
             self._check_watchlist_now)
-        self.results_tabs.addTab(self.watchlist_tab, "İzleme listesi")
-
-        self.results_tabs.currentChanged.connect(self._on_results_tab_changed)
-
-        self.splitter = QSplitter(Qt.Vertical)
-        self.splitter.addWidget(ch_group)
-        self.splitter.addWidget(self.results_tabs)
-        self.splitter.setStretchFactor(0, 0)
-        self.splitter.setStretchFactor(1, 1)
-        self.splitter.setHandleWidth(8)
-        # Ayirici cubuk suruklenince bir bolum tamamen kaybolup diger
-        # bolumun her yeri kaplamasini engellemek icin: her iki tarafta da
-        # her zaman kullanilabilir bir minimum yukseklik birakilir (bkz.
-        # childrenCollapsible=False + setMinimumHeight).
-        self.splitter.setChildrenCollapsible(False)
-        ch_group.setMinimumHeight(90)
-        self.results_tabs.setMinimumHeight(150)
-        root.addWidget(self.splitter, 1)
-        self._restore_window_state()
-
-        self.status_progress = QProgressBar()
-        self.status_progress.setMaximumWidth(160)
-        self.status_progress.setMaximumHeight(14)
-        self.status_progress.setTextVisible(False)
-        self.status_progress.setRange(0, 0)
-        self.status_progress.setVisible(False)
-        self.statusBar().addPermanentWidget(self.status_progress)
-        self.statusBar().showMessage("Hazır")
+        self.pages.addWidget(self.watchlist_tab)
 
     # ================================================================ pencere durumu
     def _restore_window_state(self):
@@ -421,15 +499,21 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
         state = self.settings.splitter_state
-        if state:
+        # Kaydedilen durum yonlendirmeyi de tasir: eski (dikey, ust/alt)
+        # duzenden kalan bir durum geri yuklenirse yeni yatay kenar cubugu
+        # duzenini dikeye cevirir. Bu yuzden durum surumlenir; farkli
+        # surumdeki kayitlar sessizce yok sayilir.
+        if state.startswith(_SPLITTER_STATE_VERSION):
             try:
-                self.splitter.restoreState(QByteArray.fromHex(state.encode("ascii")))
+                self.splitter.restoreState(QByteArray.fromHex(
+                    state[len(_SPLITTER_STATE_VERSION):].encode("ascii")))
             except Exception:
                 pass
 
     def _save_window_state(self):
         self.settings.window_geometry = bytes(self.saveGeometry().toHex()).decode("ascii")
-        self.settings.splitter_state = bytes(self.splitter.saveState().toHex()).decode("ascii")
+        self.settings.splitter_state = _SPLITTER_STATE_VERSION + bytes(
+            self.splitter.saveState().toHex()).decode("ascii")
         self.settings.save()
 
     # ================================================================ kanal listesi
@@ -1220,7 +1304,7 @@ class MainWindow(QMainWindow):
             self._open_download_dialogs.remove(dlg)
         dlg.deleteLater()
         self._update_downloads_btn()
-        if self.results_tabs.currentIndex() == 1:
+        if self.pages.currentIndex() == 1:
             self._load_history_tab()
 
     def _update_downloads_btn(self):
@@ -1272,7 +1356,7 @@ class MainWindow(QMainWindow):
 
     def _on_headless_finished(self, video_id: str, title: str, path: str):
         self._highlight_downloaded({VideoResult.make_url(video_id)})
-        if self.results_tabs.currentIndex() == 1:
+        if self.pages.currentIndex() == 1:
             self._load_history_tab()
 
     def _on_headless_done(self, worker: DownloadWorker):
@@ -1472,10 +1556,20 @@ class MainWindow(QMainWindow):
     def _on_app_update_checked_auto(self, current: str, latest: str, outdated: bool, release: dict):
         self.settings.app_update_last_check = dt.date.today().isoformat()
         self.settings.save()
-        if outdated and latest != self.settings.app_update_skip_version:
+        if not outdated or latest == self.settings.app_update_skip_version:
+            return
+        # Kullaniciyi Ayarlar'a yollamak yerine guncellemeyi bulundugu
+        # yerde, tek tikla yapilabilir hale getirir.
+        from app.ui.update_dialog import UpdateDialog
+        dlg = UpdateDialog(current, latest, release, self)
+        dlg.exec()
+        if dlg.skipped_version:
+            self.settings.app_update_skip_version = dlg.skipped_version
+            self.settings.save()
+            self.statusBar().showMessage(f"v{latest} sürümü atlandı.", 10000)
+        else:
             self.statusBar().showMessage(
-                f"Yeni sürüm mevcut: v{latest} (kurulu: v{current}) — "
-                "Ayarlar'dan güncelleyebilirsiniz.", 20000)
+                f"Yeni sürüm mevcut: v{latest} (kurulu: v{current}).", 20000)
 
     def _on_app_update_worker_done(self):
         if self._app_update_worker is not None:

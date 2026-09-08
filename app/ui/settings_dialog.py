@@ -1,10 +1,10 @@
 """Ayarlar penceresi: API anahtari, tema, disa aktarma klasoru, yt-dlp guncelleme."""
 from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout,
-    QHBoxLayout, QLabel, QLineEdit, QMessageBox, QProgressBar, QPushButton,
-    QSpinBox, QVBoxLayout,
+    QFrame, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QProgressBar,
+    QPushButton, QScrollArea, QSpinBox, QVBoxLayout, QWidget,
 )
 
 from app.services.app_updater import AppUpdater
@@ -31,15 +31,28 @@ class SettingsDialog(QDialog):
         self._pending_release: dict | None = None
         self._ffmpeg_worker: FFmpegDownloadWorker | None = None
         self.setWindowTitle("Ayarlar")
-        self.setMinimumWidth(520)
+        self.setMinimumWidth(560)
         from app.ui.theme import sync_titlebar
         sync_titlebar(self)
 
-        layout = QVBoxLayout(self)
+        # Ayarlar listesi uzun; dizustu gibi kisa ekranlarda pencere ekrana
+        # sigmadiginda alt kismi (Kaydet dugmesi dahil) hic gorunmuyordu.
+        # Bu yuzden icerik kaydirilabilir bir alana konur; Kaydet/Vazgeç
+        # satiri kaydirma alaninin DISINDA, her zaman gorunur kalir.
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(20, 16, 20, 16)
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignRight)
+        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
 
         # API anahtari
+        form.addRow(self._section("YouTube API", first=True))
         key_row = QHBoxLayout()
         self.key_edit = QLineEdit(self.settings.api_key)
         self.key_edit.setEchoMode(QLineEdit.Password)
@@ -86,6 +99,8 @@ class SettingsDialog(QDialog):
         help_label.linkActivated.connect(lambda url: QDesktopServices.openUrl(QUrl(url)))
         form.addRow(help_label)
 
+        form.addRow(self._section("Görünüm"))
+
         # Tema
         self.theme_combo = QComboBox()
         for key, label in THEMES:
@@ -93,6 +108,8 @@ class SettingsDialog(QDialog):
         idx = next((i for i, (k, _) in enumerate(THEMES) if k == self.settings.theme), 0)
         self.theme_combo.setCurrentIndex(idx)
         form.addRow("Tema", self.theme_combo)
+
+        form.addRow(self._section("Klasörler"))
 
         # Disa aktarma klasoru
         dir_row = QHBoxLayout()
@@ -113,6 +130,8 @@ class SettingsDialog(QDialog):
         dl_row.addWidget(self.dl_dir_edit, 1)
         dl_row.addWidget(dl_browse)
         form.addRow("İndirme klasörü", dl_row)
+
+        form.addRow(self._section("Arama"))
 
         # Arama yontemi
         self.method_combo = QComboBox()
@@ -141,6 +160,8 @@ class SettingsDialog(QDialog):
                     if self.scope_combo.itemData(i) == self.settings.channel_scan_scope), 0)
         self.scope_combo.setCurrentIndex(idx)
         form.addRow("Kanal tarama kapsamı", self.scope_combo)
+
+        form.addRow(self._section("İndirme"))
 
         # Kare format
         self.frame_combo = QComboBox()
@@ -189,6 +210,8 @@ class SettingsDialog(QDialog):
         self.hide_downloaded_check.setChecked(self.settings.hide_downloaded)
         form.addRow("", self.hide_downloaded_check)
 
+        form.addRow(self._section("İzleme listesi"))
+
         # Izleme listesi denetim araligi
         self.watchlist_interval_combo = QComboBox()
         for minutes in (15, 30, 60, 120, 240):
@@ -202,6 +225,7 @@ class SettingsDialog(QDialog):
 
         # FFmpeg (yuksek kaliteli birlestirme ve goruntu cikarma icin gerekli;
         # dagitim boyutunu kucuk tutmak icin onceden paketlenmez)
+        form.addRow(self._section("Bileşenler ve sürüm"))
         ffmpeg_row = QHBoxLayout()
         self.ffmpeg_status_label = QLabel()
         self._refresh_ffmpeg_status()
@@ -250,18 +274,58 @@ class SettingsDialog(QDialog):
         form.addRow("", self.apply_app_update_btn)
 
         layout.addLayout(form)
+        layout.addStretch(1)
+
+        scroll.setWidget(content)
+        outer.addWidget(scroll, 1)
+        # Kaydirma alani icerigi kendiliginden daraltmaz; pencere icerigin
+        # gerektirdiginden dar acilirsa sag taraf (Gözat gibi dugmeler)
+        # kirpilir. Alt sinir icerige gore belirlenir (+ kaydirma cubugu).
+        self.setMinimumWidth(max(560, content.minimumSizeHint().width() + 40))
 
         btn_row = QHBoxLayout()
+        btn_row.setContentsMargins(20, 10, 20, 14)
         btn_row.addStretch(1)
+        cancel_btn = QPushButton("Vazgeç")
+        cancel_btn.clicked.connect(self.reject)
         save_btn = QPushButton("Kaydet")
         save_btn.setObjectName(ACCENT_BUTTON_OBJECT_NAME)
         save_btn.setDefault(True)
         save_btn.clicked.connect(self._save)
-        cancel_btn = QPushButton("Vazgeç")
-        cancel_btn.clicked.connect(self.reject)
-        btn_row.addWidget(save_btn)
         btn_row.addWidget(cancel_btn)
-        layout.addLayout(btn_row)
+        btn_row.addWidget(save_btn)
+        outer.addLayout(btn_row)
+
+        self._fit_to_screen()
+
+    @staticmethod
+    def _section(title: str, first: bool = False) -> QLabel:
+        """Uzun ayar listesini gorsel olarak bolen bolum basligi."""
+        label = QLabel(title)
+        font = label.font()
+        font.setBold(True)
+        label.setFont(font)
+        label.setStyleSheet(
+            "color: #6e6e73; text-transform: uppercase;"
+            f" margin-top: {2 if first else 18}px; margin-bottom: 2px;")
+        return label
+
+    def _fit_to_screen(self):
+        """Pencereyi ekrana sigacak sekilde acar.
+
+        Dizustu gibi kisa ekranlarda pencere ekrandan tasip alt kismi
+        (Kaydet dugmesi dahil) gorunmez hale geliyordu; yukseklik ekranin
+        kullanilabilir alanina gore sinirlanir, kalan icerige kaydirma
+        cubugundan erisilir.
+        """
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        if screen is None:
+            self.resize(600, 700)
+            return
+        available = screen.availableGeometry()
+        width = min(max(self.minimumWidth(), 640), max(520, available.width() - 80))
+        height = min(820, max(360, available.height() - 80))
+        self.resize(width, height)
 
     def _browse_dir(self):
         path = QFileDialog.getExistingDirectory(self, "Dışa aktarma klasörü seç",

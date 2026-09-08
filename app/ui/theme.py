@@ -75,6 +75,22 @@ QScrollBar:vertical {{ background: transparent; width: 10px; margin: 0; }}
 QScrollBar::handle:vertical {{ background: #444; border-radius: 5px; min-height: 24px; }}
 QScrollBar::handle:vertical:hover {{ background: #555; }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+QWidget#sidebar {{ background-color: #1c1c1c; border-right: 1px solid #303030; }}
+QWidget#sidebar QListWidget {{ background-color: #232323; border: 1px solid #303030; }}
+QWidget#sidebar QListWidget#navList {{ background: transparent; border: none; padding: 0; }}
+QWidget#sidebar QListWidget#navList::item {{
+    padding: 7px 10px; border-radius: 7px; color: #dedede; margin: 1px 0;
+}}
+QWidget#sidebar QListWidget#navList::item:hover {{ background-color: #2e2e2e; }}
+QWidget#sidebar QListWidget#navList::item:selected {{ background-color: {_ACCENT_DARK}; color: #ffffff; }}
+QLabel#sectionLabel {{ color: #7d7d82; font-size: 10px; font-weight: bold; }}
+QLabel#pageTitle {{ color: #f2f2f2; font-size: 19px; font-weight: bold; }}
+QLabel#mutedLabel {{ color: #8e8e93; }}
+QLabel#betaBadge {{
+    color: #fbbf24; background-color: #3a2f10; border: 1px solid #6b5312;
+    border-radius: 4px; padding: 1px 6px; font-size: 10px; font-weight: bold;
+}}
+QFrame#card {{ background-color: #262626; border: 1px solid #333333; border-radius: 12px; }}
 """
 
 _LIGHT_QSS = f"""
@@ -131,6 +147,22 @@ QScrollBar:vertical {{ background: transparent; width: 10px; margin: 0; }}
 QScrollBar::handle:vertical {{ background: #d2d2d7; border-radius: 5px; min-height: 24px; }}
 QScrollBar::handle:vertical:hover {{ background: #b8b8bd; }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+QWidget#sidebar {{ background-color: #f0f0f2; border-right: 1px solid #e0e0e5; }}
+QWidget#sidebar QListWidget {{ background-color: #ffffff; border: 1px solid #e0e0e5; }}
+QWidget#sidebar QListWidget#navList {{ background: transparent; border: none; padding: 0; }}
+QWidget#sidebar QListWidget#navList::item {{
+    padding: 7px 10px; border-radius: 7px; color: #1d1d1f; margin: 1px 0;
+}}
+QWidget#sidebar QListWidget#navList::item:hover {{ background-color: #e4e4e9; }}
+QWidget#sidebar QListWidget#navList::item:selected {{ background-color: {_ACCENT_LIGHT}; color: #ffffff; }}
+QLabel#sectionLabel {{ color: #86868b; font-size: 10px; font-weight: bold; }}
+QLabel#pageTitle {{ color: #1d1d1f; font-size: 19px; font-weight: bold; }}
+QLabel#mutedLabel {{ color: #86868b; }}
+QLabel#betaBadge {{
+    color: #b45309; background-color: #fef3c7; border: 1px solid #e0b055;
+    border-radius: 4px; padding: 1px 6px; font-size: 10px; font-weight: bold;
+}}
+QFrame#card {{ background-color: #ffffff; border: 1px solid #e5e5ea; border-radius: 12px; }}
 """
 
 # main_window.py'deki "ARA" gibi tek bir birincil eylem butonu, objectName
@@ -139,6 +171,17 @@ ACCENT_BUTTON_OBJECT_NAME = "accentButton"
 # Tarih hizli secim / kanal etiketi gibi "hap" (pill) gorunumlu, ikincil
 # secim butonlari icin.
 PILL_BUTTON_OBJECT_NAME = "pillButton"
+# Ana penceredeki sol kenar cubugu ve icindeki gezinme listesi.
+SIDEBAR_OBJECT_NAME = "sidebar"
+NAV_LIST_OBJECT_NAME = "navList"
+# Kucuk, buyuk harfli bolum basligi ("KANALLAR" gibi).
+SECTION_LABEL_OBJECT_NAME = "sectionLabel"
+# Sayfa basligi ve ikincil (soluk) aciklama metni.
+PAGE_TITLE_OBJECT_NAME = "pageTitle"
+MUTED_LABEL_OBJECT_NAME = "mutedLabel"
+BETA_BADGE_OBJECT_NAME = "betaBadge"
+# Icerigi gruplayan, yuvarlatilmis kose ve hafif kenarlikli kutu.
+CARD_OBJECT_NAME = "card"
 
 
 def system_is_dark() -> bool:
