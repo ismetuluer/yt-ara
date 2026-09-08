@@ -93,6 +93,22 @@ class DownloadHistory:
             self.log.warning("Dosya yolu okunamadi: %s", exc)
             return None
 
+    def mark_stale_downloading_as_failed(self) -> int:
+        """"indiriliyor" durumunda kalmis kayitlari "hata" yapar.
+
+        Bu durum yalnizca uygulama indirme sirasinda kapatilirsa/coktuyse
+        olusur (calisan bir worker bir daha oncekinden devam edemez); bu
+        yuzden her baslangicta bir kez cagrilir -- aksi halde gecmis
+        ekraninda hicbir zaman bitmeyecek bir "indiriliyor" kaydi kalirdi."""
+        try:
+            with self._connect() as conn:
+                cur = conn.execute(
+                    "UPDATE downloads SET status='hata' WHERE status='indiriliyor'")
+                return cur.rowcount
+        except sqlite3.Error as exc:
+            self.log.warning("Yarim kalan kayitlar guncellenemedi: %s", exc)
+            return 0
+
     def delete(self, record_id: int) -> None:
         try:
             with self._connect() as conn:

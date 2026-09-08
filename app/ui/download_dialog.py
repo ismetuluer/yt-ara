@@ -7,11 +7,10 @@ import logging
 import os
 
 from PySide6.QtCore import QDateTime, Qt
-from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDateTimeEdit, QDialog, QFileDialog, QHBoxLayout,
     QLabel, QListWidget, QListWidgetItem, QMessageBox, QProgressBar,
-    QPushButton, QVBoxLayout,
+    QPushButton, QVBoxLayout, QWidget,
 )
 
 from app.services.download_history import DownloadHistory
@@ -24,13 +23,52 @@ from app.utils.paths import default_download_dir
 from app.workers.download_worker import DownloadWorker
 from app.workers.ffmpeg_download_worker import FFmpegDownloadWorker
 
-COLOR_DONE = QColor(198, 239, 206)
-COLOR_FAILED = QColor(255, 214, 214)
+_STATE_STYLES = {
+    "done": "background-color: rgba(52, 199, 89, 0.18); border-radius: 6px;",
+    "failed": "background-color: rgba(255, 69, 58, 0.18); border-radius: 6px;",
+}
+
+
+class _VideoRowWidget(QWidget):
+    """Video basina baslik + gercek ilerleme cubugu satiri.
+
+    Onceden yalnizca liste ogesinin metnine "%NN" yaziliyordu; kullanici
+    gercek bir ilerleme cubugu istedigi icin her satir kendi QProgressBar'ina
+    sahip kucuk bir widget'a donusturuldu (bkz. DownloadDialog._populate)."""
+
+    def __init__(self, title: str, parent=None):
+        super().__init__(parent)
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(6, 3, 6, 3)
+        lay.setSpacing(8)
+        self.title_label = QLabel(title)
+        self.title_label.setMinimumWidth(120)
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 100)
+        self.progress.setValue(0)
+        self.progress.setFixedWidth(140)
+        self.progress.setMaximumHeight(16)
+        self.progress.setTextVisible(True)
+        self.status_label = QLabel("Bekliyor")
+        self.status_label.setMinimumWidth(90)
+        lay.addWidget(self.title_label, 1)
+        lay.addWidget(self.progress)
+        lay.addWidget(self.status_label)
+
+    def set_state(self, state: str):
+        self.setStyleSheet(_STATE_STYLES.get(state, ""))
 
 
 class DownloadDialog(QDialog):
-    def __init__(self, items: list[dict], settings, parent=None):
-        """items: [{'video_id', 'title', 'url'}, ...]"""
+    def __init__(self, items: list[dict], settings, parent=None,
+                 on_progress=None, on_status=None):
+        """items: [{'video_id', 'title', 'url'}, ...]
+
+        on_progress(url, pct): opsiyonel, indirme yuzdesi degistikce cagirilir
+            (ornegin sonuc listesindeki ilgili satiri guncellemek icin).
+        on_status(url, text): opsiyonel, durum metni degistikce (Tamamlandı/
+            Hata/İndiriliyor) cagirilir.
+        """
         super().__init__(parent)
         self.items = items
         self.settings = settings
@@ -40,15 +78,18 @@ class DownloadDialog(QDialog):
         self._pending_start: tuple | None = None
         self._history = DownloadHistory()
         self._list_items: dict[str, QListWidgetItem] = {}
+        self._row_widgets: dict[str, _VideoRowWidget] = {}
         self._id_to_url = {item.get("video_id", ""): item.get("url", "") for item in items}
         self.completed_urls: set[str] = set()
         # video_id -> (indirilen_byte, toplam_byte); genel yuzde bunlardan
         # hesaplanir (bkz. _recompute_overall_progress).
         self._byte_progress: dict[str, tuple[int, int]] = {}
         self._done_count = 0
+        self._on_progress_cb = on_progress
+        self._on_status_cb = on_status
 
         self.setWindowTitle("Video indir")
-        self.setMinimumSize(560, 420)
+        self.setMinimumSize(620, 440)
         from app.ui.theme import sync_titlebar
         sync_titlebar(self)
         self._build_ui()
@@ -151,9 +192,14 @@ class DownloadDialog(QDialog):
 
     def _populate(self):
         for item in self.items:
-            list_item = QListWidgetItem(item.get("title", ""))
+            video_id = item.get("video_id", "")
+            list_item = QListWidgetItem()
+            row = _VideoRowWidget(item.get("title", ""))
+            list_item.setSizeHint(row.sizeHint())
             self.list_widget.addItem(list_item)
-            self._list_items[item.get("video_id", "")] = list_item
+            self.list_widget.setItemWidget(list_item, row)
+            self._list_items[video_id] = list_item
+            self._row_widgets[video_id] = row
         self.status_label.setText(f"{len(self.items)} video hazır.")
 
     def _selected_dir(self) -> str:
@@ -329,15 +375,23 @@ class DownloadDialog(QDialog):
                 "o adımın bitmesi birkaç saniye daha sürebilir)")
 
     def _on_progress(self, video_id, title, downloaded, total, speed, eta, filename):
-        item = self._list_items.get(video_id)
-        if item is None:
-            return
+        row = self._row_widgets.get(video_id)
+        url = self._id_to_url.get(video_id, "")
         if total > 0:
             pct = int(downloaded * 100 / total)
-            speed_txt = f"  ({speed / 1024 / 1024:.1f} MB/sn)" if speed > 0 else ""
-            item.setText(f"{title}  —  %{pct}{speed_txt}")
+            if row is not None:
+                row.progress.setRange(0, 100)
+                row.progress.setValue(pct)
+                speed_txt = f"{speed / 1024 / 1024:.1f} MB/sn" if speed > 0 else "İndiriliyor"
+                row.status_label.setText(speed_txt)
+            if self._on_progress_cb and url:
+                self._on_progress_cb(url, pct)
         else:
-            item.setText(f"{title}  —  indiriliyor...")
+            if row is not None:
+                row.progress.setRange(0, 0)  # belirsiz ilerleme
+                row.status_label.setText("İndiriliyor")
+            if self._on_status_cb and url:
+                self._on_status_cb(url, "İndiriliyor")
         self._byte_progress[video_id] = (downloaded, total)
         self._recompute_overall_progress()
 
@@ -345,21 +399,30 @@ class DownloadDialog(QDialog):
         url = self._id_to_url.get(video_id)
         if url:
             self.completed_urls.add(url)
-        item = self._list_items.get(video_id)
-        if item is not None:
-            item.setText(title)
-            item.setBackground(COLOR_DONE)
+        row = self._row_widgets.get(video_id)
+        if row is not None:
+            row.progress.setRange(0, 100)
+            row.progress.setValue(100)
+            row.status_label.setText("Tamamlandı")
+            row.set_state("done")
+        if self._on_status_cb and url:
+            self._on_status_cb(url, "İndirildi")
         self.status_label.setText(f"Tamamlandı: {title}")
         self._done_count += 1
         self._byte_progress.pop(video_id, None)
         self._recompute_overall_progress()
 
     def _on_failed(self, video_id, title, message):
-        item = self._list_items.get(video_id)
-        if item is not None:
-            item.setText(title)
-            item.setBackground(COLOR_FAILED)
-            item.setToolTip(message)
+        row = self._row_widgets.get(video_id)
+        if row is not None:
+            row.progress.setRange(0, 100)
+            row.progress.setValue(0)
+            row.status_label.setText("Hata")
+            row.status_label.setToolTip(message)
+            row.set_state("failed")
+        url = self._id_to_url.get(video_id)
+        if self._on_status_cb and url:
+            self._on_status_cb(url, "Hata")
         self.status_label.setText(f"İndirilemedi: {title}")
         self._done_count += 1
         self._byte_progress.pop(video_id, None)

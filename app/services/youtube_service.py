@@ -164,16 +164,18 @@ class YouTubeService:
                 published_at=str(snippet.get("publishedAt", "")),
                 url=VideoResult.make_url(video_id),
             ))
-        self._fill_durations(videos)
+        self._fill_content_details(videos)
         return videos, str(data.get("nextPageToken") or "")
 
-    def _fill_durations(self, videos: list["VideoResult"]) -> None:
-        """Video surelerini `videos.list` ile toplu (en fazla 50'lik grup) doldurur.
+    def _fill_content_details(self, videos: list["VideoResult"]) -> None:
+        """Sure ve altyazi bilgisini `videos.list` ile toplu (en fazla 50'lik
+        grup) doldurur.
 
-        Ayri bir cagri gerektirir (arama uc noktasi sure vermez) ama dusuk
-        maliyetlidir (1 birim/cagri) ve sonuclari Shorts/Video ayrimi ve
-        "Süre" sutunu icin gerekli kilar. Basarisiz olursa (ag hatasi vb.)
-        sessizce atlanir -- sure bilgisi olmadan sonuclar yine de gosterilir.
+        Ayri bir cagri gerektirir (arama uc noktasi bunlari vermez) ama dusuk
+        maliyetlidir (1 birim/cagri) ve sonuclari Shorts/Video ayrimi, "Süre"
+        sutunu ve altyazi ikonu icin gerekli kilar. Basarisiz olursa (ag
+        hatasi vb.) sessizce atlanir -- bu bilgiler olmadan sonuclar yine de
+        gosterilir.
         """
         ids = [v.video_id for v in videos if v.video_id]
         if not ids:
@@ -185,14 +187,15 @@ class YouTubeService:
                 data = self._get("videos", {
                     "part": "contentDetails",
                     "id": ",".join(batch),
-                    "fields": "items(id,contentDetails/duration)",
+                    "fields": "items(id,contentDetails/duration,contentDetails/caption)",
                 })
                 for item in data.get("items", []):
                     vid = str(item.get("id") or "")
                     video = by_id.get(vid)
                     if video is None:
                         continue
-                    duration = (item.get("contentDetails") or {}).get("duration") or ""
-                    video.duration = _parse_iso8601_duration(duration)
+                    details = item.get("contentDetails") or {}
+                    video.duration = _parse_iso8601_duration(details.get("duration") or "")
+                    video.has_captions = str(details.get("caption") or "").lower() == "true"
         except YouTubeError as exc:
-            self.log.info("Sure bilgisi alinamadi: %s", exc)
+            self.log.info("Sure/altyazi bilgisi alinamadi: %s", exc)

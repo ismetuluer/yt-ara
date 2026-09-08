@@ -62,7 +62,7 @@ class WatchlistTab(QWidget):
         self.channel_edit = QLineEdit()
         self.channel_edit.setPlaceholderText("Kanal adresi")
         self.keyword_edit = QLineEdit()
-        self.keyword_edit.setPlaceholderText("Anahtar kelime (boş = tüm videolar)")
+        self.keyword_edit.setPlaceholderText("Anahtar kelime (isteğe bağlı)")
         self.add_btn = QPushButton(icon("add"), "İzlemeye al")
         self.add_btn.setObjectName(ACCENT_BUTTON_OBJECT_NAME)
         self.add_btn.clicked.connect(self._add_watch)

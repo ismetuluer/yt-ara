@@ -73,9 +73,9 @@ class SearchWorker(QThread):
             if channels is None:  # iptal edildi
                 self.search_done.emit([], dict(self.task.page_tokens), False, True)
                 return
-            exclude_ids = self._resolve_excludes()
+            exclude_ids, exclude_titles = self._resolve_excludes()
             targets = channels if channels else [None]
-            self._run_search(targets, channels, exclude_ids)
+            self._run_search(targets, channels, exclude_ids, exclude_titles)
         except (YouTubeError, YtDlpError) as exc:
             if exc.detail:
                 self.log.warning("Arama hatasi: %s", exc.detail)
@@ -115,26 +115,44 @@ class SearchWorker(QThread):
                 channels.append(ChannelInfo(channel_id=channel_id, title=title))
         return channels
 
-    def _resolve_excludes(self) -> set:
-        """Haric tutulacak kanallarin ID'lerini cozer.
+    def _resolve_excludes(self) -> tuple[set, set]:
+        """Haric tutulacak kanallarin (ID kumesi, ad kumesi) cozer.
 
         Bu bir "en iyi caba" filtresidir: kanal scope'unun aksine, tek bir
         kanalin cozumlenememesi tum aramayi basarisiz saymaz -- yalnizca o
         kanal haric tutulamamis olur (loglanir, sessizce atlanir).
+
+        Ad (baslik) ayrica tutulur: API'siz (yt-dlp) genel aramada sonuc
+        girdileri her zaman channel_id tasimaz (flat/hizli liste), bu
+        durumda yalnizca ID ile karsilastirma haric tutmayi sessizce
+        etkisiz kilardi -- kanal isaretlenip "hariç tut" acilsa bile
+        sonuclarda gorunmeye devam ederdi. Ad karsilastirmasi bunun icin
+        bir yedek yoldur (bkz. SearchWorker._run_search).
         """
         ids = set()
+        titles = set()
         for raw in self.task.exclude_channel_inputs:
             if self._cancel:
                 break
             try:
-                channel_id, _ = self.engine.resolve_channel(raw)
+                channel_id, title = self.engine.resolve_channel(raw)
                 if channel_id:
                     ids.add(channel_id)
+                if title:
+                    titles.add(title.strip().casefold())
             except Exception as exc:
                 self.log.warning("Haric tutulacak kanal cozumlenemedi: %s (%s)", raw, exc)
-        return ids
+        return ids, titles
 
-    def _run_search(self, targets, channels, exclude_ids: set) -> None:
+    @staticmethod
+    def _is_excluded(video, exclude_ids: set, exclude_titles: set) -> bool:
+        if video.channel_id and video.channel_id in exclude_ids:
+            return True
+        if exclude_titles and video.channel_title:
+            return video.channel_title.strip().casefold() in exclude_titles
+        return False
+
+    def _run_search(self, targets, channels, exclude_ids: set, exclude_titles: set) -> None:
         tokens = dict(self.task.page_tokens)
         seen = set(self._existing_ids)
         total_channels = len(targets)
@@ -161,7 +179,7 @@ class SearchWorker(QThread):
         def on_video(video) -> None:
             if self._cancel or video.video_id in seen:
                 return
-            if exclude_ids and video.channel_id in exclude_ids:
+            if (exclude_ids or exclude_titles) and self._is_excluded(video, exclude_ids, exclude_titles):
                 return
             if self.task.exact_phrase and not _exact_phrase_match(video.title, self.task.query):
                 return
@@ -206,8 +224,8 @@ class SearchWorker(QThread):
                 # desteklemiyorsa, ornegin API motoru gec cagirdiysa) kalan
                 # olasi videolar icin guvenlik agi olarak calisir.
                 fresh = [v for v in videos if v.video_id not in seen]
-                if exclude_ids:
-                    fresh = [v for v in fresh if v.channel_id not in exclude_ids]
+                if exclude_ids or exclude_titles:
+                    fresh = [v for v in fresh if not self._is_excluded(v, exclude_ids, exclude_titles)]
                 if self.task.exact_phrase:
                     fresh = [v for v in fresh if _exact_phrase_match(v.title, self.task.query)]
                 seen.update(v.video_id for v in fresh)

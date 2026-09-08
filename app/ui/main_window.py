@@ -2,6 +2,7 @@
 import datetime as dt
 import logging
 import os
+import subprocess
 import time
 import webbrowser
 from urllib.parse import parse_qs, urlparse
@@ -43,10 +44,10 @@ from app.workers.search_worker import SearchTask, SearchWorker
 from app.workers.update_worker import YtDlpUpdateWorker
 from app.workers.watchlist_worker import WatchlistWorker
 
-COL_NO, COL_TITLE, COL_CHANNEL, COL_DATE, COL_DURATION, COL_KIND, COL_URL = range(7)
+COL_NO, COL_TITLE, COL_CHANNEL, COL_DATE, COL_DURATION, COL_KIND, COL_STATUS, COL_URL = range(8)
 # Sutun basliklari kisa tutulur: icerigi zaten sutunun kendisi anlatiyor
 # ("Video Başlığı" yerine "Başlık" gibi).
-HEADERS = ["No", "Başlık", "Kanal", "Tarih", "Süre", "Tür", "Adres"]
+HEADERS = ["No", "Başlık", "Kanal", "Tarih", "Süre", "Tür", "Durum", "Adres"]
 # "No" sutunu (satir sirasi) her zaman gorunur kalir; kullanici gizleyemez.
 ALWAYS_VISIBLE_COLUMNS = {COL_NO}
 CACHE_TTL = 300  # saniye; ayni aramanin tekrarini onler
@@ -71,6 +72,12 @@ DOWNLOADED_COLOR = QColor(198, 239, 206)  # indirilen videolari vurgulamak icin
 # Vurgu rengi acik oldugundan, koyu temada da okunabilmesi icin metin
 # rengi de birlikte sabitlenir (tema rengine birakilmaz).
 DOWNLOADED_TEXT_COLOR = QColor(20, 40, 24)
+# Indirilmis (yesil vurgulu) bir satir SEÇİLİNCE: item uzerinde acikca
+# ayarlanmis arka plan rengi, QSS'teki ":selected" kuralindan once
+# geldigi icin secim gorunmez oluyordu ("fareyle secim calismiyor" hissi
+# veriyordu). Bu yuzden secili+indirilmis satirlar icin ayirt edilebilir,
+# ayri bir renk kullanilir (bkz. _restyle_downloaded_rows).
+SELECTED_DOWNLOADED_COLOR = QColor(120, 190, 150)
 # Tarih araligi hazir sablonlari: (etiket, baslangic gun once, bitis gun once)
 DATE_PRESETS = [
     ("Bugün", 0, 0),
@@ -117,6 +124,10 @@ class MainWindow(QMainWindow):
         self.tokens: dict = {}
         self.has_more = False
         self._history = DownloadHistory()
+        # Uygulama bir onceki calismada indirme sirasinda kapandiysa/coktuyse
+        # gecmiste sonsuza kadar "indiriliyor" gorunecek kayitlar kalir;
+        # bunlar artik hicbir worker'a ait olamayacagi icin "hata" yapilir.
+        self._history.mark_stale_downloading_as_failed()
         self._quota = QuotaTracker(settings)
         self._history_records: dict = {}
         self._history_undo_stack: list = []
@@ -290,7 +301,7 @@ class MainWindow(QMainWindow):
 
         # Kanallar
         lay.addWidget(self._section_label("KANALLAR"))
-        ch_hint = QLabel("Kanal eklemezsen tüm YouTube'da ararız.")
+        ch_hint = QLabel("YouTube kanal listesi")
         ch_hint.setObjectName(MUTED_LABEL_OBJECT_NAME)
         ch_hint.setWordWrap(True)
         lay.addWidget(ch_hint)
@@ -298,7 +309,7 @@ class MainWindow(QMainWindow):
         add_row = QHBoxLayout()
         add_row.setSpacing(6)
         self.channel_edit = QLineEdit()
-        self.channel_edit.setPlaceholderText("Kanal adresi yapıştır")
+        self.channel_edit.setPlaceholderText("Kanal adresini yapıştır")
         self.channel_edit.setToolTip(
             "Kanal adresi, @kullanıcıadı veya kanal kimliği (UC...) yapıştırıp "
             "Enter'a basın ya da Ekle'ye tıklayın.")
@@ -317,6 +328,7 @@ class MainWindow(QMainWindow):
             "onu aynı zamanda seçer (Sil/Adlandır bu seçimi kullanır).")
         self.channel_list.itemDoubleClicked.connect(self._rename_channel)
         self.channel_list.itemChanged.connect(self._on_channel_item_changed)
+        self.channel_list.itemSelectionChanged.connect(self._on_channel_selection_changed)
         self.channel_list.setContextMenuPolicy(Qt.CustomContextMenu)
         self.channel_list.customContextMenuRequested.connect(self._channel_context_menu)
         lay.addWidget(self.channel_list, 1)
@@ -340,7 +352,7 @@ class MainWindow(QMainWindow):
             row.addWidget(second, 1)
             lay.addLayout(row)
 
-        self.exclude_channels_check = QCheckBox("Bu kanalları hariç tut")
+        self.exclude_channels_check = QCheckBox("Aramaya dahil etme")
         self.exclude_channels_check.setToolTip(
             "Açıkken, işaretli kanallar arama kapsamı değil; tüm YouTube'da "
             "arayıp bu kanalların videolarını sonuçlardan çıkarır.")
@@ -513,6 +525,8 @@ class MainWindow(QMainWindow):
         header.setSectionResizeMode(COL_DATE, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(COL_DURATION, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(COL_KIND, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(COL_STATUS, QHeaderView.Interactive)
+        self.table.setColumnWidth(COL_STATUS, 110)
         header.setSectionResizeMode(COL_URL, QHeaderView.Interactive)
         self.table.setColumnWidth(COL_URL, 290)
         self.table.verticalHeader().setVisible(False)
@@ -527,19 +541,27 @@ class MainWindow(QMainWindow):
         self.copy_all_btn = QPushButton(icon("copy"), "Linkleri kopyala")
         self.copy_all_btn.setToolTip("Listedeki tüm video adreslerini panoya kopyalar.")
         self.copy_all_btn.clicked.connect(self.copy_all)
-        self.txt_btn = QPushButton(icon("document"), "TXT'ye kaydet")
+        self.txt_btn = QPushButton(icon("document"), "Linkleri dışa aktar")
         self.txt_btn.setToolTip("Sonuçları bir metin dosyasına aktarır.")
         txt_menu = QMenu(self)
         txt_menu.addAction("Düz liste", lambda: self.export_txt(grouped=False))
         txt_menu.addAction("Kanala göre grupla",
                            lambda: self.export_txt(grouped=True))
         self.txt_btn.setMenu(txt_menu)
+        self.download_selected_btn = QPushButton(icon("download"), "Seçilenleri indir")
+        self.download_selected_btn.setToolTip(
+            "Yalnızca tablodan seçtiğiniz videoları indirir. (Ctrl+D)")
+        self.download_selected_btn.setEnabled(False)
+        self.download_selected_btn.clicked.connect(self._download_selected)
         self.download_all_btn = QPushButton(icon("download"), "Hepsini indir")
         self.download_all_btn.setToolTip("Listedeki tüm videoları indirme penceresinde açar.")
         self.download_all_btn.clicked.connect(self.download_all)
-        for b in (self.copy_all_btn, self.txt_btn, self.download_all_btn):
+        for b in (self.copy_all_btn, self.txt_btn, self.download_selected_btn, self.download_all_btn):
             btn_row.addWidget(b)
         res_layout.addLayout(btn_row)
+        self.table.itemSelectionChanged.connect(
+            lambda: self.download_selected_btn.setEnabled(bool(self.table.selectedIndexes())))
+        self.table.itemSelectionChanged.connect(self._restyle_downloaded_rows)
         self.pages.addWidget(search_tab)
 
         # --- Gecmis (daha once indirilenler)
@@ -644,14 +666,35 @@ class MainWindow(QMainWindow):
         return item
 
     def _on_channel_item_changed(self, item: QListWidgetItem):
-        """Onay kutusu isareti ile satir secimini birbirine baglar.
+        """Onay kutusu isareti ile satir secimini birbirine baglar (yon 1).
 
         Boylece kullanici yalnizca onay kutularini isaretleyerek de Sil/
-        Adlandır gibi secime dayali toplu islemleri kullanabilir (onceden
-        yalnizca satira tiklayarak secim yapmak gerekiyordu)."""
+        Adlandır gibi secime dayali toplu islemleri kullanabilir."""
         if getattr(self, "_suspend_channel_sync", False):
             return
-        item.setSelected(item.checkState() == Qt.Checked)
+        self._suspend_channel_sync = True
+        try:
+            item.setSelected(item.checkState() == Qt.Checked)
+        finally:
+            self._suspend_channel_sync = False
+        self._save_channels()
+
+    def _on_channel_selection_changed(self):
+        """Satir secimi ile onay kutusunu birbirine baglar (yon 2).
+
+        Fare ile bir kanal adina tiklamak (satiri secmek) onu da isaretler;
+        secimden cikan satirin isareti kalkar. Boylece "onay kutusuyla
+        isaretlemek" ile "fareyle secmek" tamamen ayni islevi gorur."""
+        if getattr(self, "_suspend_channel_sync", False):
+            return
+        self._suspend_channel_sync = True
+        try:
+            for i in range(self.channel_list.count()):
+                item = self.channel_list.item(i)
+                item.setCheckState(Qt.Checked if item.isSelected() else Qt.Unchecked)
+        finally:
+            self._suspend_channel_sync = False
+        self._save_channels()
 
     def add_channel(self, name: str = "", channel_id: str = ""):
         text = self.channel_edit.text().strip()
@@ -713,16 +756,24 @@ class MainWindow(QMainWindow):
 
     def _select_all_channels(self):
         """Hepsini Sec: satirlari secer VE hepsini isaretler (arama kapsamina alir)."""
-        self.channel_list.selectAll()
-        for i in range(self.channel_list.count()):
-            self.channel_list.item(i).setCheckState(Qt.Checked)
+        self._suspend_channel_sync = True
+        try:
+            self.channel_list.selectAll()
+            for i in range(self.channel_list.count()):
+                self.channel_list.item(i).setCheckState(Qt.Checked)
+        finally:
+            self._suspend_channel_sync = False
         self._save_channels()
 
     def _clear_channel_selection(self):
         """Secimi Temizle: satir secimini kaldirir VE tum isaretleri kaldirir."""
-        self.channel_list.clearSelection()
-        for i in range(self.channel_list.count()):
-            self.channel_list.item(i).setCheckState(Qt.Unchecked)
+        self._suspend_channel_sync = True
+        try:
+            self.channel_list.clearSelection()
+            for i in range(self.channel_list.count()):
+                self.channel_list.item(i).setCheckState(Qt.Unchecked)
+        finally:
+            self._suspend_channel_sync = False
         self._save_channels()
 
     def _rename_selected_channel(self):
@@ -1038,6 +1089,9 @@ class MainWindow(QMainWindow):
         no_item.setData(Qt.UserRole, no)
         title_item = SortableItem(video.title)
         title_item.setData(Qt.UserRole, video.title.casefold())
+        if video.has_captions:
+            title_item.setIcon(icon("captions", 14))
+            title_item.setToolTip("Bu videoda altyazı mevcut.")
         ch_item = SortableItem(video.channel_title)
         ch_item.setData(Qt.UserRole, video.channel_title.casefold())
         date_item = SortableItem(video.published_display)
@@ -1046,16 +1100,20 @@ class MainWindow(QMainWindow):
         duration_item.setData(Qt.UserRole, video.duration or 0)
         kind_item = SortableItem(video.kind_display)
         kind_item.setData(Qt.UserRole, video.kind_display)
+        status_item = SortableItem("")
         url_item = SortableItem(video.url)
-        items = (no_item, title_item, ch_item, date_item, duration_item, kind_item, url_item)
+        items = (no_item, title_item, ch_item, date_item, duration_item, kind_item,
+                 status_item, url_item)
         for col, item in zip(
-                (COL_NO, COL_TITLE, COL_CHANNEL, COL_DATE, COL_DURATION, COL_KIND, COL_URL),
+                (COL_NO, COL_TITLE, COL_CHANNEL, COL_DATE, COL_DURATION, COL_KIND,
+                 COL_STATUS, COL_URL),
                 items):
             self.table.setItem(row, col, item)
         if video.url in self._downloaded_urls:
             for item in items:
                 item.setBackground(DOWNLOADED_COLOR)
                 item.setForeground(DOWNLOADED_TEXT_COLOR)
+            status_item.setText("İndirildi")
 
     def _sort_table(self):
         if self._user_sorted:
@@ -1141,7 +1199,7 @@ class MainWindow(QMainWindow):
         self._history_records = {rec["id"]: rec for rec in records}
         self.history_table.setSortingEnabled(False)
         self.history_table.setRowCount(len(records))
-        status_labels = {"tamam": "Tamamlandı", "hata": "Hata"}
+        status_labels = {"tamam": "Tamamlandı", "hata": "Hata", "indiriliyor": "İndiriliyor"}
         for row, rec in enumerate(records):
             title_item = QTableWidgetItem(rec.get("title") or "")
             title_item.setData(Qt.UserRole, rec.get("id"))
@@ -1179,10 +1237,17 @@ class MainWindow(QMainWindow):
         title = self.history_table.item(row, 0).text()
         record_id = self.history_table.item(row, 0).data(Qt.UserRole)
         url = self.history_table.item(row, 3).text()
+        file_path = self._history_records.get(record_id, {}).get("file_path")
+        has_file = bool(file_path and os.path.isfile(file_path))
         menu = QMenu(self)
         open_act = menu.addAction(icon("open"), "Tarayıcıda aç")
         redownload_act = menu.addAction(icon("download"), "Tekrar indir")
         channel_act = menu.addAction(icon("add"), "Kanallara ekle")
+        menu.addSeparator()
+        open_file_act = menu.addAction(icon("open"), "Dosyayı aç")
+        open_file_act.setEnabled(has_file)
+        open_folder_act = menu.addAction(icon("folder_open"), "Klasörü aç")
+        open_folder_act.setEnabled(has_file)
         menu.addSeparator()
         delete_act = menu.addAction(icon("delete"), "Geçmişten sil")
         action = menu.exec(self.history_table.viewport().mapToGlobal(pos))
@@ -1193,6 +1258,10 @@ class MainWindow(QMainWindow):
             self._redownload_from_history(title, url)
         elif action == channel_act:
             self._add_channel_from_history(title, url)
+        elif action == open_file_act:
+            self._open_file(file_path)
+        elif action == open_folder_act:
+            self._reveal_in_folder(file_path)
         elif action == delete_act:
             self._delete_selected_history()
 
@@ -1285,6 +1354,70 @@ class MainWindow(QMainWindow):
         self._load_history_tab()
         self.statusBar().showMessage(f"{len(batch)} kayıt yeniden silindi.")
 
+    def _restyle_downloaded_rows(self):
+        """Secili + indirilmis (yesil) satirlarin renklerini gunceller.
+
+        Sebep: item uzerine dogrudan ayarlanmis arka plan rengi (indirilmis
+        vurgusu) QSS'teki ":selected" kuralinin onune geciyor; bu da bir
+        indirilmis satiri tikladiginizda hicbir seyin degismedigini
+        (secilmedigini) dusundurebiliyordu. Secili degilken normal yesil
+        vurguya, seciliyken ayirt edilebilir bir tona donusturulur; hic
+        indirilmemis satirlarda item duzeyinde renk hic ayarlanmaz --
+        boylece QSS'in kendi secim rengini normal sekilde gosterir.
+        """
+        selected_rows = {idx.row() for idx in self.table.selectedIndexes()}
+        for row in range(self.table.rowCount()):
+            url_item = self.table.item(row, COL_URL)
+            is_downloaded = url_item is not None and url_item.text() in self._downloaded_urls
+            is_selected = row in selected_rows
+            for col in range(self.table.columnCount()):
+                item = self.table.item(row, col)
+                if item is None:
+                    continue
+                if not is_downloaded:
+                    item.setData(Qt.BackgroundRole, None)
+                    item.setData(Qt.ForegroundRole, None)
+                    continue
+                item.setForeground(DOWNLOADED_TEXT_COLOR)
+                item.setBackground(SELECTED_DOWNLOADED_COLOR if is_selected else DOWNLOADED_COLOR)
+
+    # ------------------------------------------------------------ indirme durumu (sonuc listesi)
+    def _find_row_by_url(self, url: str) -> int | None:
+        """URL sutununa gore satir bulur (siralama sonrasi indeksler degistigi icin)."""
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, COL_URL)
+            if item is not None and item.text() == url:
+                return row
+        return None
+
+    def _set_row_progress_widget(self, url: str, pct: int):
+        """Sonuc listesindeki satira, indirme yuzdesini gosteren gercek bir
+        ilerleme cubugu yerlestirir (yalnizca aktif indirme sirasinda)."""
+        row = self._find_row_by_url(url)
+        if row is None:
+            return
+        bar = self.table.cellWidget(row, COL_STATUS)
+        if not isinstance(bar, QProgressBar):
+            bar = QProgressBar()
+            bar.setRange(0, 100)
+            bar.setTextVisible(True)
+            bar.setMaximumHeight(16)
+            self.table.setCellWidget(row, COL_STATUS, bar)
+        bar.setValue(max(0, min(100, pct)))
+
+    def _set_row_status_text(self, url: str, text: str):
+        """Sonuc listesindeki Durum hucresini duz metne dondurur (ilerleme
+        cubugu varsa kaldirir) -- indirme bitince/basarisiz olunca kullanilir."""
+        row = self._find_row_by_url(url)
+        if row is None:
+            return
+        self.table.removeCellWidget(row, COL_STATUS)
+        item = self.table.item(row, COL_STATUS)
+        if item is None:
+            item = SortableItem("")
+            self.table.setItem(row, COL_STATUS, item)
+        item.setText(text)
+
     def _highlight_downloaded(self, urls: set[str]):
         """Indirilen videolari tabloda arka plan rengiyle vurgular.
 
@@ -1297,15 +1430,9 @@ class MainWindow(QMainWindow):
         if self.settings.hide_downloaded:
             self._rebuild_table()
             return
-        for row in range(self.table.rowCount()):
-            url_item = self.table.item(row, COL_URL)
-            if url_item is None or url_item.text() not in urls:
-                continue
-            for col in range(self.table.columnCount()):
-                item = self.table.item(row, col)
-                if item is not None:
-                    item.setBackground(DOWNLOADED_COLOR)
-                    item.setForeground(DOWNLOADED_TEXT_COLOR)
+        for url in urls:
+            self._set_row_status_text(url, "İndirildi")
+        self._restyle_downloaded_rows()
 
     def _update_count(self):
         total = len(self.results)
@@ -1362,6 +1489,10 @@ class MainWindow(QMainWindow):
             webbrowser.open(item.text())
 
     def _context_menu(self, pos):
+        videos = self._selected_videos()
+        file_path = self._history.file_path_for(videos[0].url) if len(videos) == 1 else None
+        has_file = bool(file_path and os.path.isfile(file_path))
+
         menu = QMenu(self)
         open_act = menu.addAction(icon("open"), "Tarayıcıda aç")
         copy_act = menu.addAction(icon("copy"), "Adresi kopyala\tCtrl+C")
@@ -1372,7 +1503,13 @@ class MainWindow(QMainWindow):
         frames_act = menu.addAction("Görüntü çıkar")
         channel_act = menu.addAction(icon("add"), "Kanallara ekle")
         menu.addSeparator()
+        open_file_act = menu.addAction(icon("open"), "Dosyayı aç")
+        open_file_act.setEnabled(has_file)
+        open_folder_act = menu.addAction(icon("folder_open"), "Klasörü aç")
+        open_folder_act.setEnabled(has_file)
+        menu.addSeparator()
         sel_act = menu.addAction(icon("select_all"), "Hepsini seç\tCtrl+A")
+        remove_act = menu.addAction(icon("delete"), "Listeden kaldır\tDelete")
         clear_act = menu.addAction(icon("clear"), "Listeyi temizle")
         action = menu.exec(self.table.viewport().mapToGlobal(pos))
         if action == open_act:
@@ -1387,6 +1524,12 @@ class MainWindow(QMainWindow):
             self._download_selected()
         elif action == frames_act:
             self._extract_frames_selected()
+        elif action == open_file_act:
+            self._open_file(file_path)
+        elif action == open_folder_act:
+            self._reveal_in_folder(file_path)
+        elif action == remove_act:
+            self._delete_selected_results()
         elif action == channel_act:
             self._add_channel_from_selected()
         elif action == clear_act:
@@ -1415,6 +1558,30 @@ class MainWindow(QMainWindow):
         self._update_count()
         self.statusBar().showMessage("Liste temizlendi.")
 
+    @staticmethod
+    def _open_file(file_path: str | None):
+        if file_path and os.path.isfile(file_path):
+            os.startfile(file_path)
+
+    @staticmethod
+    def _reveal_in_folder(file_path: str | None):
+        """Dosya gezgininde, dosya secili halde klasoru acar."""
+        if file_path and os.path.isfile(file_path):
+            subprocess.Popen(["explorer", "/select,", os.path.normpath(file_path)])
+
+    def _delete_selected_results(self):
+        """Secili satirlari sonuc listesinden kaldirir (Delete tusu / bağlam menusu).
+
+        Yalnizca goruntulenen listeden kaldirir; indirme/gecmisi etkilemez."""
+        videos = self._selected_videos()
+        if not videos:
+            return
+        remove_ids = {v.video_id for v in videos}
+        self.results = [v for v in self.results if v.video_id not in remove_ids]
+        self.result_ids -= remove_ids
+        self._rebuild_table()
+        self.statusBar().showMessage(f"{len(remove_ids)} sonuç listeden kaldırıldı.")
+
     # ================================================================ indirme / kare
     def _selected_videos(self) -> list[VideoResult]:
         """Secili satirlarin videolarini dondurur.
@@ -1439,7 +1606,12 @@ class MainWindow(QMainWindow):
 
     def _open_download_dialog(self, items: list[dict]):
         from app.ui.download_dialog import DownloadDialog
-        dlg = DownloadDialog(items, self.settings, self)
+        # Sonuc listesindeki ilgili satirin Durum hucresini de canli
+        # gunceller (indirme penceresiyle esgudumlu ilerleme).
+        dlg = DownloadDialog(
+            items, self.settings, self,
+            on_progress=self._set_row_progress_widget,
+            on_status=self._set_row_status_text)
         dlg.setWindowModality(Qt.NonModal)
         dlg.finished.connect(lambda _res=None, d=dlg: self._on_download_dialog_finished(d))
         self._open_download_dialogs.append(dlg)
@@ -1517,18 +1689,28 @@ class MainWindow(QMainWindow):
             subtitle_langs=self.settings.subtitle_langs,
             max_concurrent=self.settings.max_concurrent_downloads,
             speed_limit_kbps=self.settings.download_speed_limit_kbps, parent=self)
+        worker.progress.connect(self._on_headless_progress)
         worker.finished.connect(self._on_headless_finished)
-        worker.failed.connect(
-            lambda vid, title, msg: self.log.warning(
-                "Otomatik indirme basarisiz: %s (%s)", title, msg))
+        worker.failed.connect(self._on_headless_failed)
         worker.all_done.connect(lambda done, total, w=worker: self._on_headless_done(w))
         self._headless_workers.append(worker)
         worker.start()
+
+    def _on_headless_progress(self, video_id, title, downloaded, total, speed, eta, filename):
+        url = VideoResult.make_url(video_id)
+        if total > 0:
+            self._set_row_progress_widget(url, int(downloaded * 100 / total))
+        else:
+            self._set_row_status_text(url, "İndiriliyor")
 
     def _on_headless_finished(self, video_id: str, title: str, path: str):
         self._highlight_downloaded({VideoResult.make_url(video_id)})
         if self.pages.currentIndex() == 1:
             self._load_history_tab()
+
+    def _on_headless_failed(self, video_id: str, title: str, message: str):
+        self.log.warning("Otomatik indirme basarisiz: %s (%s)", title, message)
+        self._set_row_status_text(VideoResult.make_url(video_id), "Hata")
 
     def _on_headless_done(self, worker: DownloadWorker):
         if worker in self._headless_workers:
@@ -1751,6 +1933,9 @@ class MainWindow(QMainWindow):
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Delete and self.history_table.hasFocus():
             self._delete_selected_history()
+            return
+        if event.key() == Qt.Key_Delete and self.table.hasFocus():
+            self._delete_selected_results()
             return
         if event.matches(QKeySequence.Undo):
             self._history_undo()

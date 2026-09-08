@@ -46,6 +46,8 @@ _GLYPHS = {
     "more": "\uE70D",         # asagi chevron
     "info": "\uE946",         # bilgi
     "open": "\uE8A7",         # yeni pencerede ac
+    "captions": "\uE7F0",     # altyazi/kapali baslik
+    "folder_open": "\uED43",  # klasoru ac
 }
 
 _font_family: str | None = None

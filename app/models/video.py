@@ -17,6 +17,10 @@ class VideoResult:
     published_at: str  # ISO 8601, ornek: 2024-03-15T14:22:00Z
     url: str
     duration: int = 0  # saniye; bilinmiyorsa 0
+    # Altyazi/kapali baslik mevcut mu. Yalnizca YouTube API modunda
+    # doldurulur (yt-dlp'nin hizli/duz aramasi bu bilgiyi vermez); API'siz
+    # modda hep False kalir -- yani ikon yalnizca API anahtari varken gorunur.
+    has_captions: bool = False
 
     @property
     def published_display(self) -> str:
