@@ -57,11 +57,15 @@ class DownloadDialog(QDialog):
     def _build_ui(self):
         layout = QVBoxLayout(self)
 
-        # Klasor secimi
+        # Klasor secimi. Ayarlarda henuz bir klasor secilmemisse alan bos
+        # birakilir (baska bir bilgisayara tasindiginda/kurulduğunda
+        # kullaniciya rastgele -- ve kisisel gorunen -- bir yol
+        # gosterilmemesi icin); klasor "İndir"e basilinca sorulur ve o andan
+        # sonra hatirlanir (bkz. _start).
         dir_row = QHBoxLayout()
         dir_row.addWidget(QLabel("İndirme klasörü"))
         self.dir_edit = QLabel()
-        self.dir_edit.setText(self.settings.download_dir or default_download_dir())
+        self.dir_edit.setText(self.settings.download_dir or "Seçilmedi — İndir'e basınca sorulacak")
         self.dir_edit.setWordWrap(True)
         browse_btn = QPushButton(icon("folder"), "Gözat")
         browse_btn.clicked.connect(self._browse_dir)
@@ -152,18 +156,33 @@ class DownloadDialog(QDialog):
             self._list_items[item.get("video_id", "")] = list_item
         self.status_label.setText(f"{len(self.items)} video hazır.")
 
+    def _selected_dir(self) -> str:
+        """Su an gosterilen klasor yolu (henuz secilmemisse bos)."""
+        text = self.dir_edit.text().strip()
+        return "" if text == self._dir_placeholder() else text
+
+    @staticmethod
+    def _dir_placeholder() -> str:
+        return "Seçilmedi — İndir'e basınca sorulacak"
+
     def _browse_dir(self):
         path = QFileDialog.getExistingDirectory(
-            self, "İndirme Klasörü Seç", self.dir_edit.text())
+            self, "İndirme Klasörü Seç", self._selected_dir() or default_download_dir())
         if path:
             self.dir_edit.setText(path)
 
     def _start(self):
         if self._worker is not None:
             return
-        download_dir = self.dir_edit.text().strip()
+        download_dir = self._selected_dir()
         if not download_dir:
-            download_dir = default_download_dir()
+            # Ilk kullanim: klasor daha once secilmemis, kullaniciya sorulur
+            # (sessizce Masaustu gibi kisisel bir yol varsayilmaz).
+            download_dir = QFileDialog.getExistingDirectory(
+                self, "İndirme Klasörü Seç", default_download_dir())
+            if not download_dir:
+                return
+            self.dir_edit.setText(download_dir)
         os.makedirs(download_dir, exist_ok=True)
         # Secilen klasor bir sonraki sefer icin hatirlanir.
         if self.settings.download_dir != download_dir:

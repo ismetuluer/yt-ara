@@ -3,8 +3,9 @@ from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout,
-    QFrame, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QProgressBar,
-    QPushButton, QScrollArea, QSpinBox, QVBoxLayout, QWidget,
+    QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
+    QProgressBar, QPushButton, QScrollArea, QSizePolicy, QSpinBox,
+    QVBoxLayout, QWidget,
 )
 
 from app.services.app_updater import AppUpdater
@@ -14,7 +15,7 @@ from app.services.settings_service import SettingsService
 from app.services.youtube_service import YouTubeError, YouTubeService
 from app.services.ytdlp_updater import YtDlpUpdater
 from app.ui.icons import icon
-from app.ui.theme import ACCENT_BUTTON_OBJECT_NAME
+from app.ui.theme import ACCENT_BUTTON_OBJECT_NAME, CARD_OBJECT_NAME
 from app.workers.app_update_worker import AppUpdateWorker
 from app.workers.ffmpeg_download_worker import FFmpegDownloadWorker
 from app.workers.update_worker import YtDlpUpdateWorker
@@ -32,7 +33,7 @@ class SettingsDialog(QDialog):
         self._pending_release: dict | None = None
         self._ffmpeg_worker: FFmpegDownloadWorker | None = None
         self.setWindowTitle("Ayarlar")
-        self.setMinimumWidth(560)
+        self.setMinimumWidth(760)
         from app.ui.theme import sync_titlebar
         sync_titlebar(self)
 
@@ -40,6 +41,10 @@ class SettingsDialog(QDialog):
         # sigmadiginda alt kismi (Kaydet dugmesi dahil) hic gorunmuyordu.
         # Bu yuzden icerik kaydirilabilir bir alana konur; Kaydet/Vazgeç
         # satiri kaydirma alaninin DISINDA, her zaman gorunur kalir.
+        #
+        # Ayarlar ana pencereyle ayni "kart" gorsel dilini kullanir: her
+        # bolum kendi karti icinde, iki sutunlu bir izgarada yer alir --
+        # tek uzun dikey liste yerine.
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         scroll = QScrollArea()
@@ -48,12 +53,15 @@ class SettingsDialog(QDialog):
         content = QWidget()
         layout = QVBoxLayout(content)
         layout.setContentsMargins(20, 16, 20, 16)
-        form = QFormLayout()
-        form.setLabelAlignment(Qt.AlignRight)
-        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        grid = QGridLayout()
+        grid.setSpacing(14)
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 1)
+        self._card_row = 0
+        self._card_col = 0
 
         # API anahtari
-        form.addRow(self._section("YouTube API", first=True))
+        form = self._new_card(grid, "YouTube API")
         key_row = QHBoxLayout()
         self.key_edit = QLineEdit(self.settings.api_key)
         self.key_edit.setEchoMode(QLineEdit.Password)
@@ -100,7 +108,7 @@ class SettingsDialog(QDialog):
         help_label.linkActivated.connect(lambda url: QDesktopServices.openUrl(QUrl(url)))
         form.addRow(help_label)
 
-        form.addRow(self._section("Görünüm"))
+        form = self._new_card(grid, "Görünüm")
 
         # Tema
         self.theme_combo = QComboBox()
@@ -110,7 +118,7 @@ class SettingsDialog(QDialog):
         self.theme_combo.setCurrentIndex(idx)
         form.addRow("Tema", self.theme_combo)
 
-        form.addRow(self._section("Klasörler"))
+        form = self._new_card(grid, "Klasörler")
 
         # Disa aktarma klasoru
         dir_row = QHBoxLayout()
@@ -132,7 +140,7 @@ class SettingsDialog(QDialog):
         dl_row.addWidget(dl_browse)
         form.addRow("İndirme klasörü", dl_row)
 
-        form.addRow(self._section("Arama"))
+        form = self._new_card(grid, "Arama")
 
         # Arama yontemi
         self.method_combo = QComboBox()
@@ -162,7 +170,7 @@ class SettingsDialog(QDialog):
         self.scope_combo.setCurrentIndex(idx)
         form.addRow("Kanal tarama kapsamı", self.scope_combo)
 
-        form.addRow(self._section("İndirme"))
+        form = self._new_card(grid, "İndirme")
 
         # Kare format
         self.frame_combo = QComboBox()
@@ -211,7 +219,7 @@ class SettingsDialog(QDialog):
         self.hide_downloaded_check.setChecked(self.settings.hide_downloaded)
         form.addRow("", self.hide_downloaded_check)
 
-        form.addRow(self._section("İzleme listesi"))
+        form = self._new_card(grid, "İzleme listesi")
 
         # Izleme listesi denetim araligi
         self.watchlist_interval_combo = QComboBox()
@@ -226,7 +234,7 @@ class SettingsDialog(QDialog):
 
         # FFmpeg (yuksek kaliteli birlestirme ve goruntu cikarma icin gerekli;
         # dagitim boyutunu kucuk tutmak icin onceden paketlenmez)
-        form.addRow(self._section("Bileşenler ve sürüm"))
+        form = self._new_card(grid, "Bileşenler ve sürüm", span=2)
         ffmpeg_row = QHBoxLayout()
         self.ffmpeg_status_label = QLabel()
         self._refresh_ffmpeg_status()
@@ -274,7 +282,7 @@ class SettingsDialog(QDialog):
         self.apply_app_update_btn.clicked.connect(self._apply_app_update)
         form.addRow("", self.apply_app_update_btn)
 
-        layout.addLayout(form)
+        layout.addLayout(grid)
         layout.addStretch(1)
 
         scroll.setWidget(content)
@@ -282,7 +290,7 @@ class SettingsDialog(QDialog):
         # Kaydirma alani icerigi kendiliginden daraltmaz; pencere icerigin
         # gerektirdiginden dar acilirsa sag taraf (Gözat gibi dugmeler)
         # kirpilir. Alt sinir icerige gore belirlenir (+ kaydirma cubugu).
-        self.setMinimumWidth(max(560, content.minimumSizeHint().width() + 40))
+        self.setMinimumWidth(max(760, content.minimumSizeHint().width() + 40))
 
         btn_row = QHBoxLayout()
         btn_row.setContentsMargins(20, 10, 20, 14)
@@ -299,17 +307,45 @@ class SettingsDialog(QDialog):
 
         self._fit_to_screen()
 
-    @staticmethod
-    def _section(title: str, first: bool = False) -> QLabel:
-        """Uzun ayar listesini gorsel olarak bolen bolum basligi."""
-        label = QLabel(title)
-        font = label.font()
+    def _new_card(self, grid: QGridLayout, title: str, span: int = 1) -> QFormLayout:
+        """Yeni bir ayar karti olusturup izgaraya ekler; icindeki form
+        duzenini dondurur (cagiran taraf `form.addRow(...)` ile doldurur).
+
+        Kartlar iki sutunlu bir izgarada soldan saga, yukaridan asagi
+        siralanir (`span=2` verilirse kart tek basina bir satiri kaplar).
+        """
+        card = QFrame()
+        card.setObjectName(CARD_OBJECT_NAME)
+        card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(14, 12, 14, 12)
+        card_layout.setSpacing(8)
+
+        heading = QLabel(title)
+        font = heading.font()
         font.setBold(True)
-        label.setFont(font)
-        label.setStyleSheet(
-            "color: #6e6e73; text-transform: uppercase;"
-            f" margin-top: {2 if first else 18}px; margin-bottom: 2px;")
-        return label
+        heading.setFont(font)
+        heading.setStyleSheet("color: #6e6e73; text-transform: uppercase;")
+        card_layout.addWidget(heading)
+
+        form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignRight)
+        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        card_layout.addLayout(form)
+
+        if span >= 2 and self._card_col != 0:
+            self._card_row += 1
+            self._card_col = 0
+        grid.addWidget(card, self._card_row, self._card_col, 1, span)
+        if span >= 2:
+            self._card_row += 1
+            self._card_col = 0
+        else:
+            self._card_col += 1
+            if self._card_col > 1:
+                self._card_col = 0
+                self._card_row += 1
+        return form
 
     def _fit_to_screen(self):
         """Pencereyi ekrana sigacak sekilde acar.
@@ -324,8 +360,8 @@ class SettingsDialog(QDialog):
             self.resize(600, 700)
             return
         available = screen.availableGeometry()
-        width = min(max(self.minimumWidth(), 640), max(520, available.width() - 80))
-        height = min(820, max(360, available.height() - 80))
+        width = min(max(self.minimumWidth(), 760), max(520, available.width() - 80))
+        height = min(760, max(360, available.height() - 80))
         self.resize(width, height)
 
     def _browse_dir(self):

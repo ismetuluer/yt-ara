@@ -8,9 +8,9 @@ import webbrowser
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QAbstractItemView, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
-    QListWidget, QListWidgetItem, QMenu, QPushButton, QTableWidget,
-    QTableWidgetItem, QVBoxLayout, QWidget,
+    QAbstractItemView, QComboBox, QHBoxLayout, QHeaderView, QLabel,
+    QLineEdit, QListWidget, QListWidgetItem, QMenu, QPushButton,
+    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from app.services.watchlist_service import WatchlistService
@@ -20,18 +20,22 @@ from app.ui.theme import ACCENT_BUTTON_OBJECT_NAME
 
 class WatchlistTab(QWidget):
     def __init__(self, watchlist: WatchlistService, resolve_channel_name,
-                 prime_watch, check_now, parent=None):
+                 prime_watch, check_now, get_saved_channels=None, parent=None):
         """
         resolve_channel_name(url) -> str: kanal adini senkron cozer.
         prime_watch(watch_id, url): mevcut videolari "gorulmus" isaretler
             (izlemeye yeni alinan kanalin gecmis videolari indirilmesin diye).
         check_now(): "Şimdi Denetle" icin geri cagri.
+        get_saved_channels() -> list[dict]: sol kenar cubugundaki kayitli
+            kanallari dondurur ({"url", "name"}); verilirse kullanici bir
+            kanal adresini elle yazmak yerine listeden secebilir.
         """
         super().__init__(parent)
         self.watchlist = watchlist
         self._resolve_channel_name = resolve_channel_name
         self._prime_watch = prime_watch
         self._check_now = check_now
+        self._get_saved_channels = get_saved_channels
         self._build_ui()
         self.refresh()
 
@@ -44,6 +48,15 @@ class WatchlistTab(QWidget):
         hint.setWordWrap(True)
         hint.setStyleSheet("color: #888;")
         layout.addWidget(hint)
+
+        # Kayitli kanallardan secim: kanal adresini elle yazmak yerine sol
+        # kenar cubugundaki listeden secilebilir (secince adres kutusuna
+        # otomatik yazilir).
+        self.saved_channel_combo = QComboBox()
+        self.saved_channel_combo.setToolTip("Zaten kayıtlı kanallardan birini seçin.")
+        self.saved_channel_combo.currentIndexChanged.connect(self._on_saved_channel_picked)
+        self._refresh_saved_channel_combo()
+        layout.addWidget(self.saved_channel_combo)
 
         add_row = QHBoxLayout()
         self.channel_edit = QLineEdit()
@@ -90,7 +103,31 @@ class WatchlistTab(QWidget):
         self.found_table.verticalHeader().setVisible(False)
         layout.addWidget(self.found_table, 1)
 
+    def _refresh_saved_channel_combo(self):
+        if self._get_saved_channels is None:
+            self.saved_channel_combo.setVisible(False)
+            return
+        channels = self._get_saved_channels()
+        self.saved_channel_combo.blockSignals(True)
+        self.saved_channel_combo.clear()
+        self.saved_channel_combo.addItem("Kayıtlı kanallardan seç…", "")
+        for entry in channels:
+            url = entry.get("url", "")
+            if not url:
+                continue
+            label = entry.get("name") or url
+            self.saved_channel_combo.addItem(label, url)
+        self.saved_channel_combo.setCurrentIndex(0)
+        self.saved_channel_combo.blockSignals(False)
+        self.saved_channel_combo.setVisible(self.saved_channel_combo.count() > 1)
+
+    def _on_saved_channel_picked(self, index: int):
+        url = self.saved_channel_combo.itemData(index)
+        if url:
+            self.channel_edit.setText(url)
+
     def refresh(self):
+        self._refresh_saved_channel_combo()
         self.watch_list.clear()
         for watch in self.watchlist.all():
             label = watch.get("channel_title") or watch.get("channel_url")

@@ -9,6 +9,7 @@ yoksa gömülü yt-dlp modulu kullanilir. Boylece updater'in guncelledigi
 surum, download_service ile ayni sekilde arama tarafinda da etkin olur.
 """
 import datetime as dt
+import html
 import json
 import logging
 import os
@@ -54,10 +55,18 @@ def _entry_to_video(entry: dict, fallback_channel: str = "",
     video_id = entry.get("id")
     if not video_id:
         return None
-    title = str(entry.get("title") or "")
-    channel = str(entry.get("channel") or entry.get("uploader") or fallback_channel or "")
+    # YouTube baslik/kanal adlarini bazen HTML kaciriciyla dondurur
+    # (ornek: "Alihan Kuriş&#39;in..."); kullaniciya ham haliyle gosterilmemesi
+    # icin cozulur.
+    title = html.unescape(str(entry.get("title") or ""))
+    channel = html.unescape(str(entry.get("channel") or entry.get("uploader") or fallback_channel or ""))
     channel_id = str(entry.get("channel_id") or entry.get("uploader_id") or fallback_channel_id or "")
     published = _upload_date_to_iso(entry.get("upload_date"))
+    duration = entry.get("duration")
+    try:
+        duration = int(duration) if duration is not None else 0
+    except (TypeError, ValueError):
+        duration = 0
     return VideoResult(
         video_id=video_id,
         title=title,
@@ -65,6 +74,7 @@ def _entry_to_video(entry: dict, fallback_channel: str = "",
         channel_title=channel,
         published_at=published,
         url=VideoResult.make_url(video_id),
+        duration=duration,
     )
 
 

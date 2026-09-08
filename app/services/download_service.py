@@ -128,13 +128,13 @@ class DownloadService:
             opts["ffmpeg_location"] = os.path.dirname(self.ffmpeg_path)
         if self.speed_limit_kbps > 0:
             opts["ratelimit"] = self.speed_limit_kbps * 1024
-        if self.subtitles:
-            opts["writesubtitles"] = True
-            opts["writeautomaticsub"] = True
-            opts["subtitleslangs"] = self._lang_list()
-            if self.ffmpeg_path:
-                opts["postprocessors"] = opts.get("postprocessors", []) + [
-                    {"key": "FFmpegSubtitlesConvertor", "format": "srt"}]
+        # DIKKAT: altyazi burada ISTENMEZ. Altyazi indirme (ozellikle
+        # YouTube'un otomatik altyazilari) sik sik HTTP 429 ile basarisiz
+        # oluyor ve bu, yt-dlp'de tum indirmeyi (videoyu da) hataya
+        # dusuruyordu -- kullanici altyaziyi isaretlediginde video hic
+        # inmiyordu. Bu yuzden video ONCE altyazisiz indirilir; altyazi
+        # ayri (ve basarisizligi videoyu etkilemeyecek sekilde) denenir
+        # (bkz. _download_subtitles_best_effort).
         return opts
 
     def _lang_list(self) -> list[str]:
@@ -170,7 +170,7 @@ class DownloadService:
                 info = ydl.extract_info(url, download=True)
                 if info is None:
                     raise DownloadError("Video indirilemedi.")
-                return self._resolved_path(info, opts["outtmpl"])
+                path = self._resolved_path(info, opts["outtmpl"])
         except yt_dlp.utils.DownloadCancelled:
             raise DownloadError("İndirme iptal edildi.", "cancelled")
         except yt_dlp.utils.DownloadError as exc:
@@ -182,6 +182,40 @@ class DownloadService:
                 "İndirme sırasında beklenmeyen bir hata oluştu.",
                 str(exc),
             )
+        if self.subtitles and not self._cancel.is_set():
+            self._download_subtitles_module_best_effort(url, opts["outtmpl"])
+        return path
+
+    def _download_subtitles_module_best_effort(self, url: str, outtmpl: str) -> None:
+        """Altyaziyi ayrica indirmeyi dener; basarisiz olursa yalnizca loglar.
+
+        Video indirmesi bundan tamamen bagimsizdir (bkz. _base_opts notu):
+        altyazi olsun ya da olmasin, sonucu ne olursa olsun video zaten
+        indirilmis olur.
+        """
+        sub_opts = {
+            "outtmpl": outtmpl,
+            "quiet": True,
+            "no_warnings": True,
+            "noplaylist": True,
+            "skip_download": True,
+            "writesubtitles": True,
+            "writeautomaticsub": True,
+            "subtitleslangs": self._lang_list(),
+            "socket_timeout": 10,
+            "retries": 1,
+            "fragment_retries": 1,
+            "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
+        }
+        if self.ffmpeg_path:
+            sub_opts["ffmpeg_location"] = os.path.dirname(self.ffmpeg_path)
+            sub_opts["postprocessors"] = [
+                {"key": "FFmpegSubtitlesConvertor", "format": "srt"}]
+        try:
+            with yt_dlp.YoutubeDL(sub_opts) as ydl:
+                ydl.extract_info(url, download=True)
+        except Exception as exc:
+            self.log.warning("Altyazi indirilemedi (video yine de indi) (%s): %s", url, exc)
 
     def _download_external(self, binary: str, url: str, progress_cb) -> str:
         """Standalone yt-dlp.exe ile (subprocess) indirir.
@@ -206,10 +240,9 @@ class DownloadService:
             cmd += ["--ffmpeg-location", os.path.dirname(self.ffmpeg_path)]
         if self.speed_limit_kbps > 0:
             cmd += ["--limit-rate", f"{self.speed_limit_kbps * 1024}"]
-        if self.subtitles:
-            cmd += ["--write-subs", "--write-auto-subs", "--sub-langs", ",".join(self._lang_list())]
-            if self.ffmpeg_path:
-                cmd += ["--convert-subs", "srt"]
+        # DIKKAT: altyazi burada ISTENMEZ; ayri bir cagriyla (basarisizligi
+        # videoyu etkilemeyecek sekilde) denenir (bkz. _download_subtitles_
+        # external_best_effort ve _download_module'daki ayni notu).
         cmd.append(url)
 
         self.log.info("Harici yt-dlp ile indiriliyor: %s", binary)
@@ -262,7 +295,29 @@ class DownloadService:
                 DownloadError("Video indirilemedi.", detail))
         if not final_path or not os.path.isfile(final_path):
             final_path = self._find_latest_file()
+        if self.subtitles and not self._cancel.is_set():
+            self._download_subtitles_external_best_effort(binary, url, outtmpl)
         return final_path
+
+    def _download_subtitles_external_best_effort(self, binary: str, url: str, outtmpl: str) -> None:
+        """Harici yt-dlp.exe ile altyaziyi ayrica dener; hata yalnizca loglanir."""
+        cmd = [
+            binary, "--no-warnings", "--no-playlist", "--skip-download",
+            "--extractor-args", "youtube:player_client=android",
+            "--write-subs", "--write-auto-subs",
+            "--sub-langs", ",".join(self._lang_list()),
+            "-o", outtmpl,
+        ]
+        if self.ffmpeg_path:
+            cmd += ["--ffmpeg-location", os.path.dirname(self.ffmpeg_path), "--convert-subs", "srt"]
+        cmd.append(url)
+        try:
+            proc = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                creationflags=subprocess.CREATE_NO_WINDOW)
+            _out, _ = proc.communicate(timeout=30)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            self.log.warning("Altyazi indirilemedi (video yine de indi) (%s): %s", url, exc)
 
     @staticmethod
     def _extract_quoted_path(line: str) -> str:

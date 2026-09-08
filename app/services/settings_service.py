@@ -29,6 +29,7 @@ DEFAULTS = {
     "app_update_skip_version": "", # kullanicinin "atla" dedigi surum (tekrar sorulmaz)
     "max_concurrent_downloads": 3,  # ayni anda indirilecek en fazla video sayisi
     "download_speed_limit_kbps": 0,  # indirme hizi siniri (KB/s); 0 = sinirsiz
+    "results_hidden_columns": [],   # sonuc tablosunda gizlenen sutun indeksleri
 }
 
 
@@ -306,3 +307,20 @@ class SettingsService:
     @download_speed_limit_kbps.setter
     def download_speed_limit_kbps(self, value: int) -> None:
         self.data["download_speed_limit_kbps"] = max(0, int(value))
+
+    @property
+    def results_hidden_columns(self) -> list[int]:
+        value = self.data.get("results_hidden_columns", [])
+        if not isinstance(value, list):
+            return []
+        result = []
+        for item in value:
+            try:
+                result.append(int(item))
+            except (TypeError, ValueError):
+                continue
+        return result
+
+    @results_hidden_columns.setter
+    def results_hidden_columns(self, value: list[int]) -> None:
+        self.data["results_hidden_columns"] = [int(v) for v in value]

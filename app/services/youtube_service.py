@@ -1,12 +1,28 @@
 """YouTube Data API v3 ile video arama servisi."""
 import datetime as dt
+import html
 import logging
+import re
 
 import requests
 
 from app.models.video import VideoResult
 
 API_BASE = "https://www.googleapis.com/youtube/v3"
+
+# ISO 8601 sure bicimi (PT#H#M#S) -> saniye
+_DURATION_RE = re.compile(
+    r"^PT(?:(?P<h>\d+)H)?(?:(?P<m>\d+)M)?(?:(?P<s>\d+)S)?$")
+
+
+def _parse_iso8601_duration(value: str) -> int:
+    m = _DURATION_RE.match(value or "")
+    if not m:
+        return 0
+    h = int(m.group("h") or 0)
+    mi = int(m.group("m") or 0)
+    s = int(m.group("s") or 0)
+    return h * 3600 + mi * 60 + s
 
 # Anahtar dogrulamasi icin bilinen sabit bir kanal (YouTube resmi kanali)
 _KEY_TEST_CHANNEL_ID = "UCBR8-60-B28hp2BmDPdntcQ"
@@ -137,12 +153,46 @@ class YouTubeService:
             snippet = item.get("snippet") or {}
             if not video_id:
                 continue
+            # YouTube baslik/kanal adlarini bazen HTML kaciriciyla dondurur
+            # (ornek: "Alihan Kuriş&#39;in..."); kullaniciya ham haliyle
+            # gosterilmemesi icin cozulur.
             videos.append(VideoResult(
                 video_id=video_id,
-                title=str(snippet.get("title", "")),
+                title=html.unescape(str(snippet.get("title", ""))),
                 channel_id=str(snippet.get("channelId", "")),
-                channel_title=str(snippet.get("channelTitle", "")),
+                channel_title=html.unescape(str(snippet.get("channelTitle", ""))),
                 published_at=str(snippet.get("publishedAt", "")),
                 url=VideoResult.make_url(video_id),
             ))
+        self._fill_durations(videos)
         return videos, str(data.get("nextPageToken") or "")
+
+    def _fill_durations(self, videos: list["VideoResult"]) -> None:
+        """Video surelerini `videos.list` ile toplu (en fazla 50'lik grup) doldurur.
+
+        Ayri bir cagri gerektirir (arama uc noktasi sure vermez) ama dusuk
+        maliyetlidir (1 birim/cagri) ve sonuclari Shorts/Video ayrimi ve
+        "Süre" sutunu icin gerekli kilar. Basarisiz olursa (ag hatasi vb.)
+        sessizce atlanir -- sure bilgisi olmadan sonuclar yine de gosterilir.
+        """
+        ids = [v.video_id for v in videos if v.video_id]
+        if not ids:
+            return
+        by_id = {v.video_id: v for v in videos}
+        try:
+            for i in range(0, len(ids), 50):
+                batch = ids[i:i + 50]
+                data = self._get("videos", {
+                    "part": "contentDetails",
+                    "id": ",".join(batch),
+                    "fields": "items(id,contentDetails/duration)",
+                })
+                for item in data.get("items", []):
+                    vid = str(item.get("id") or "")
+                    video = by_id.get(vid)
+                    if video is None:
+                        continue
+                    duration = (item.get("contentDetails") or {}).get("duration") or ""
+                    video.duration = _parse_iso8601_duration(duration)
+        except YouTubeError as exc:
+            self.log.info("Sure bilgisi alinamadi: %s", exc)

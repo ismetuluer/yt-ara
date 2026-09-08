@@ -39,7 +39,7 @@ def main():
         win._on_search_done([], {"": ""}, False, False, True)
 
         assert win.table.rowCount() == 50, f"Satir sayisi: {win.table.rowCount()}"
-        assert win.count_label.text() == "Toplam Sonuç: 50", win.count_label.text()
+        assert win.count_label.text() == "50 sonuç", win.count_label.text()
 
         # 2) Varsayilan siralama: en yeni en ustte (tarih azalan)
         first_title = win.table.item(0, COL_TITLE).text()

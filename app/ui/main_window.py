@@ -7,7 +7,7 @@ import webbrowser
 from urllib.parse import parse_qs, urlparse
 
 from PySide6.QtCore import QByteArray, QDate, QSize, Qt, QTimer
-from PySide6.QtGui import QColor, QGuiApplication, QKeySequence
+from PySide6.QtGui import QColor, QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QCheckBox, QDateEdit, QFileDialog, QFrame,
     QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit, QListWidget,
@@ -43,10 +43,12 @@ from app.workers.search_worker import SearchTask, SearchWorker
 from app.workers.update_worker import YtDlpUpdateWorker
 from app.workers.watchlist_worker import WatchlistWorker
 
-COL_NO, COL_TITLE, COL_CHANNEL, COL_DATE, COL_URL = range(5)
+COL_NO, COL_TITLE, COL_CHANNEL, COL_DATE, COL_DURATION, COL_KIND, COL_URL = range(7)
 # Sutun basliklari kisa tutulur: icerigi zaten sutunun kendisi anlatiyor
 # ("Video Başlığı" yerine "Başlık" gibi).
-HEADERS = ["No", "Başlık", "Kanal", "Tarih", "Adres"]
+HEADERS = ["No", "Başlık", "Kanal", "Tarih", "Süre", "Tür", "Adres"]
+# "No" sutunu (satir sirasi) her zaman gorunur kalir; kullanici gizleyemez.
+ALWAYS_VISIBLE_COLUMNS = {COL_NO}
 CACHE_TTL = 300  # saniye; ayni aramanin tekrarini onler
 # Sol kenar cubugundaki gezinme ogeleri (baslik, ikon adi); sirasi
 # QStackedWidget'taki sayfa sirasiyla birebir ayni olmalidir.
@@ -57,6 +59,12 @@ NAV_ENTRIES = [
     ("İzleme listesi", "watch"),
 ]
 NAV_ITEMS = [label for label, _ in NAV_ENTRIES]
+NAV_TOOLTIPS = {
+    "Sonuçlar": "Arama sonuçları. (Ctrl+1)",
+    "Geçmiş": "Daha önce indirilen videolar. (Ctrl+2)",
+    "Zamanlanmış": "İleri tarihe kuyruğa alınan indirmeler. (Ctrl+3)",
+    "İzleme listesi": "Otomatik izlenen kanallar. (Ctrl+4)",
+}
 # Bolme durumu kaydinin duzen surumu (bkz. _restore_window_state).
 _SPLITTER_STATE_VERSION = "v2:"
 DOWNLOADED_COLOR = QColor(198, 239, 206)  # indirilen videolari vurgulamak icin
@@ -105,6 +113,7 @@ class MainWindow(QMainWindow):
         self.results: list[VideoResult] = []
         self.result_ids: set[str] = set()
         self.channels = []
+        self._suspend_channel_sync = False
         self.tokens: dict = {}
         self.has_more = False
         self._history = DownloadHistory()
@@ -189,6 +198,51 @@ class MainWindow(QMainWindow):
         self.statusBar().addPermanentWidget(self.status_progress)
         self.statusBar().showMessage("Hazır")
 
+        self._setup_shortcuts()
+
+    # ------------------------------------------------------------ klavye kisayollari
+    def _setup_shortcuts(self):
+        """Sik kullanilan islemler icin klavye kisayollari.
+
+        Tablo-ozel olanlar (kopyala/hepsini sec/indir) yalnizca tablo
+        odaktayken calisir (WidgetShortcut); aksi halde metin kutularindaki
+        Ctrl+A/Ctrl+C gibi standart davranislarla catisirdi.
+        """
+        QShortcut(QKeySequence("Ctrl+F"), self, activated=self._focus_query)
+        QShortcut(QKeySequence("Ctrl+,"), self, activated=self.open_settings)
+        QShortcut(QKeySequence("F5"), self, activated=self._refresh_current_page)
+        QShortcut(QKeySequence("Esc"), self, activated=self._on_escape_pressed)
+        for i in range(1, len(NAV_ITEMS) + 1):
+            QShortcut(QKeySequence(f"Ctrl+{i}"), self,
+                      activated=lambda idx=i - 1: self.nav_list.setCurrentRow(idx))
+
+        copy_sc = QShortcut(QKeySequence.Copy, self.table)
+        copy_sc.setContext(Qt.WidgetShortcut)
+        copy_sc.activated.connect(self.copy_selected)
+        select_all_sc = QShortcut(QKeySequence.SelectAll, self.table)
+        select_all_sc.setContext(Qt.WidgetShortcut)
+        select_all_sc.activated.connect(self.table.selectAll)
+        download_sc = QShortcut(QKeySequence("Ctrl+D"), self.table)
+        download_sc.setContext(Qt.WidgetShortcut)
+        download_sc.activated.connect(self._download_selected)
+
+    def _focus_query(self):
+        self.nav_list.setCurrentRow(0)
+        self.query_edit.setFocus()
+        self.query_edit.selectAll()
+
+    def _on_escape_pressed(self):
+        if self._worker is not None:
+            self.cancel_search()
+
+    def _refresh_current_page(self):
+        idx = self.pages.currentIndex()
+        if idx == 0:
+            if self._worker is None:
+                self.start_search()
+        else:
+            self._on_results_tab_changed(idx)
+
     # ------------------------------------------------------------ kenar cubugu
     def _build_sidebar(self) -> QWidget:
         side = QWidget()
@@ -224,7 +278,9 @@ class MainWindow(QMainWindow):
         for label, icon_name in NAV_ENTRIES:
             # Secili satir mavi zeminde durur; icons.icon() bunun icin
             # QIcon.Selected kipini de doldurur (ikon beyaza doner).
-            self.nav_list.addItem(QListWidgetItem(icon(icon_name, 17), label))
+            nav_item = QListWidgetItem(icon(icon_name, 17), label)
+            nav_item.setToolTip(NAV_TOOLTIPS.get(label, label))
+            self.nav_list.addItem(nav_item)
         self.nav_list.setCurrentRow(0)
         self.nav_list.setFocusPolicy(Qt.NoFocus)
         self.nav_list.setFixedHeight(len(NAV_ITEMS) * 36 + 8)
@@ -243,6 +299,9 @@ class MainWindow(QMainWindow):
         add_row.setSpacing(6)
         self.channel_edit = QLineEdit()
         self.channel_edit.setPlaceholderText("Kanal adresi yapıştır")
+        self.channel_edit.setToolTip(
+            "Kanal adresi, @kullanıcıadı veya kanal kimliği (UC...) yapıştırıp "
+            "Enter'a basın ya da Ekle'ye tıklayın.")
         self.channel_edit.returnPressed.connect(self.add_channel)
         self.add_channel_btn = QPushButton(icon("add"), "Ekle")
         self.add_channel_btn.clicked.connect(self.add_channel)
@@ -253,7 +312,11 @@ class MainWindow(QMainWindow):
         self.channel_list = QListWidget()
         self.channel_list.setMinimumHeight(80)
         self.channel_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.channel_list.setToolTip(
+            "İşaretli kanallar arama kapsamına dahildir. Bir kanalı işaretlemek "
+            "onu aynı zamanda seçer (Sil/Adlandır bu seçimi kullanır).")
         self.channel_list.itemDoubleClicked.connect(self._rename_channel)
+        self.channel_list.itemChanged.connect(self._on_channel_item_changed)
         self.channel_list.setContextMenuPolicy(Qt.CustomContextMenu)
         self.channel_list.customContextMenuRequested.connect(self._channel_context_menu)
         lay.addWidget(self.channel_list, 1)
@@ -265,6 +328,7 @@ class MainWindow(QMainWindow):
         self.clear_channel_selection_btn = QPushButton(icon("clear"), "Temizle")
         self.clear_channel_selection_btn.clicked.connect(self._clear_channel_selection)
         self.remove_channel_btn = QPushButton(icon("delete"), "Sil")
+        self.remove_channel_btn.setToolTip("İşaretli veya seçili kanalları listeden kaldırır.")
         self.remove_channel_btn.clicked.connect(self.remove_channel)
         self.rename_channel_btn = QPushButton(icon("edit"), "Adlandır")
         self.rename_channel_btn.clicked.connect(self._rename_selected_channel)
@@ -287,9 +351,11 @@ class MainWindow(QMainWindow):
         lay.addSpacing(6)
         self.downloads_btn = QPushButton(icon("download"), "İndirmeler")
         self.downloads_btn.setVisible(False)
+        self.downloads_btn.setToolTip("Açık indirme pencerelerini gösterir.")
         self.downloads_btn.clicked.connect(self._show_download_dialogs)
         lay.addWidget(self.downloads_btn)
         self.settings_btn = QPushButton(icon("settings"), "Ayarlar")
+        self.settings_btn.setToolTip("Ayarlar penceresini açar. (Ctrl+,)")
         self.settings_btn.clicked.connect(self.open_settings)
         lay.addWidget(self.settings_btn)
         return side
@@ -337,16 +403,19 @@ class MainWindow(QMainWindow):
         row.setSpacing(8)
         self.query_edit = QLineEdit()
         self.query_edit.setPlaceholderText("Ne aramak istersin?")
+        self.query_edit.setToolTip("Aramaya başlamak için Enter'a basın. (Ctrl+F ile buraya atlayın)")
         self.query_edit.setMinimumHeight(34)
         self.query_edit.returnPressed.connect(self.start_search)
         # Vurgu (mavi) dugmenin ikonu beyaz uretilir.
         self.search_btn = QPushButton(icon("search", on_accent=True), "Ara")
         self.search_btn.setObjectName(ACCENT_BUTTON_OBJECT_NAME)
+        self.search_btn.setToolTip("Aramayı başlatır. (Enter)")
         self.search_btn.setMinimumHeight(34)
         self.search_btn.setMinimumWidth(96)
         self.search_btn.setCursor(Qt.PointingHandCursor)
         self.search_btn.clicked.connect(self.start_search)
         self.cancel_btn = QPushButton(icon("cancel"), "İptal")
+        self.cancel_btn.setToolTip("Devam eden aramayı iptal eder. (Esc)")
         self.cancel_btn.setMinimumHeight(34)
         self.cancel_btn.setVisible(False)
         self.cancel_btn.clicked.connect(self.cancel_search)
@@ -414,9 +483,11 @@ class MainWindow(QMainWindow):
         res_top = QHBoxLayout()
         self.count_label = QLabel("0 sonuç")
         self.more_btn = QPushButton(icon("more"), "Daha fazla")
+        self.more_btn.setToolTip("Sonraki sonuç sayfasını getirir.")
         self.more_btn.setEnabled(False)
         self.more_btn.clicked.connect(lambda: self.continue_search(fetch_all=False))
         self.all_btn = QPushButton("Hepsini getir")
+        self.all_btn.setToolTip("Kalan tüm sonuçları getirir (uzun sürebilir).")
         self.all_btn.setEnabled(False)
         self.all_btn.clicked.connect(lambda: self.continue_search(fetch_all=True))
         res_top.addWidget(self.count_label)
@@ -440,25 +511,33 @@ class MainWindow(QMainWindow):
         header.setSectionResizeMode(COL_TITLE, QHeaderView.Stretch)
         header.setSectionResizeMode(COL_CHANNEL, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(COL_DATE, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(COL_DURATION, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(COL_KIND, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(COL_URL, QHeaderView.Interactive)
         self.table.setColumnWidth(COL_URL, 290)
         self.table.verticalHeader().setVisible(False)
+        # Sutunlar gizlenebilir/gosterilebilir olsun diye baslik satirina
+        # sag tiklama menusu eklenir; secim onceki oturumdan hatirlanir.
+        header.setContextMenuPolicy(Qt.CustomContextMenu)
+        header.customContextMenuRequested.connect(self._results_header_menu)
+        self._apply_hidden_columns()
         res_layout.addWidget(self.table)
 
         btn_row = QHBoxLayout()
-        self.copy_sel_btn = QPushButton(icon("copy"), "Seçilenleri kopyala")
-        self.copy_sel_btn.clicked.connect(self.copy_selected)
-        self.copy_all_btn = QPushButton(icon("copy"), "Hepsini kopyala")
+        self.copy_all_btn = QPushButton(icon("copy"), "Linkleri kopyala")
+        self.copy_all_btn.setToolTip("Listedeki tüm video adreslerini panoya kopyalar.")
         self.copy_all_btn.clicked.connect(self.copy_all)
         self.txt_btn = QPushButton(icon("document"), "TXT'ye kaydet")
+        self.txt_btn.setToolTip("Sonuçları bir metin dosyasına aktarır.")
         txt_menu = QMenu(self)
         txt_menu.addAction("Düz liste", lambda: self.export_txt(grouped=False))
         txt_menu.addAction("Kanala göre grupla",
                            lambda: self.export_txt(grouped=True))
         self.txt_btn.setMenu(txt_menu)
         self.download_all_btn = QPushButton(icon("download"), "Hepsini indir")
+        self.download_all_btn.setToolTip("Listedeki tüm videoları indirme penceresinde açar.")
         self.download_all_btn.clicked.connect(self.download_all)
-        for b in (self.copy_sel_btn, self.copy_all_btn, self.txt_btn, self.download_all_btn):
+        for b in (self.copy_all_btn, self.txt_btn, self.download_all_btn):
             btn_row.addWidget(b)
         res_layout.addLayout(btn_row)
         self.pages.addWidget(search_tab)
@@ -499,7 +578,7 @@ class MainWindow(QMainWindow):
         # --- Izleme listesi (kanal + anahtar kelime ile otomatik indirme)
         self.watchlist_tab = WatchlistTab(
             self._watchlist, self._resolve_channel_name, self._prime_watch,
-            self._check_watchlist_now)
+            self._check_watchlist_now, get_saved_channels=self._channel_entries)
         self.pages.addWidget(self.watchlist_tab)
 
     # ================================================================ pencere durumu
@@ -531,9 +610,14 @@ class MainWindow(QMainWindow):
 
     # ================================================================ kanal listesi
     def _load_saved_channels(self):
-        for entry in self.settings.saved_channels:
-            item = self._add_channel_item(entry["url"], entry.get("name", ""))
-            item.setCheckState(Qt.Checked if entry.get("active", True) else Qt.Unchecked)
+        self._suspend_channel_sync = True
+        try:
+            for entry in self.settings.saved_channels:
+                item = self._add_channel_item(
+                    entry["url"], entry.get("name", ""), entry.get("channel_id", ""))
+                item.setCheckState(Qt.Checked if entry.get("active", True) else Qt.Unchecked)
+        finally:
+            self._suspend_channel_sync = False
 
     def _save_channels(self):
         entries = []
@@ -542,55 +626,88 @@ class MainWindow(QMainWindow):
             entries.append({
                 "url": item.data(Qt.UserRole),
                 "name": item.data(Qt.UserRole + 1) or "",
+                "channel_id": item.data(Qt.UserRole + 2) or "",
                 "active": item.checkState() == Qt.Checked,
             })
         self.settings.saved_channels = entries
         self.settings.save()
 
-    def _add_channel_item(self, url: str, name: str = "") -> QListWidgetItem:
+    def _add_channel_item(self, url: str, name: str = "", channel_id: str = "") -> QListWidgetItem:
         item = QListWidgetItem(name or url)
         item.setData(Qt.UserRole, url)
         item.setData(Qt.UserRole + 1, name)
+        item.setData(Qt.UserRole + 2, channel_id)
         item.setToolTip(url)
         item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
         item.setCheckState(Qt.Checked)
         self.channel_list.addItem(item)
         return item
 
-    def add_channel(self, name: str = ""):
+    def _on_channel_item_changed(self, item: QListWidgetItem):
+        """Onay kutusu isareti ile satir secimini birbirine baglar.
+
+        Boylece kullanici yalnizca onay kutularini isaretleyerek de Sil/
+        Adlandır gibi secime dayali toplu islemleri kullanabilir (onceden
+        yalnizca satira tiklayarak secim yapmak gerekiyordu)."""
+        if getattr(self, "_suspend_channel_sync", False):
+            return
+        item.setSelected(item.checkState() == Qt.Checked)
+
+    def add_channel(self, name: str = "", channel_id: str = ""):
         text = self.channel_edit.text().strip()
         if not text:
             return
         for i in range(self.channel_list.count()):
             if self.channel_list.item(i).data(Qt.UserRole) == text:
+                self.statusBar().showMessage("Bu kanal zaten listede.")
                 self.channel_edit.clear()
                 return
-        if not name:
-            name = self._resolve_channel_name(text)
-        self._add_channel_item(text, name)
+        if not name and not channel_id:
+            channel_id, name = self._resolve_channel_info(text)
+        if channel_id:
+            for i in range(self.channel_list.count()):
+                existing = self.channel_list.item(i)
+                if existing.data(Qt.UserRole + 2) == channel_id:
+                    self.statusBar().showMessage(
+                        f"Bu kanal zaten listede: {existing.data(Qt.UserRole + 1) or existing.text()}")
+                    self.channel_edit.clear()
+                    return
+        self._add_channel_item(text, name, channel_id)
         self.channel_edit.clear()
         self._save_channels()
 
     def _resolve_channel_name(self, url: str) -> str:
-        """Kanal adini kanal adresinden otomatik cozmeyi dener.
+        """Kanal adini kanal adresinden otomatik cozmeyi dener (yalnizca ad)."""
+        return self._resolve_channel_info(url)[1]
+
+    def _resolve_channel_info(self, url: str) -> tuple[str, str]:
+        """Kanal adresini (channel_id, ad) olarak cozmeyi dener.
 
         Bulunamazsa (agsiz, gecersiz adres vb.) sessizce bos dondurur;
-        kullanici istedigi zaman elle yeniden adlandirabilir."""
+        kullanici istedigi zaman elle yeniden adlandirabilir. channel_id
+        ozellikle yinelenen kanal denetimi icin kullanilir (ayni kanal farkli
+        adres bicimleriyle -- @handle / /channel/UC... -- eklenirse bile
+        yakalanabilsin diye)."""
         self.statusBar().showMessage("Kanal adı alınıyor...")
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
             engine = self._build_engine()
-            _, title = engine.resolve_channel(url)
-            return title
+            channel_id, title = engine.resolve_channel(url)
+            return channel_id or "", title
         except Exception as exc:
             self.log.info("Kanal adi otomatik cozulemedi: %s", exc)
-            return ""
+            return "", ""
         finally:
             QApplication.restoreOverrideCursor()
             self.statusBar().showMessage("Hazır")
 
     def remove_channel(self):
-        for item in self.channel_list.selectedItems():
+        items = self.channel_list.selectedItems()
+        if not items:
+            self.statusBar().showMessage(
+                "Silmek için kanal seçin veya onay kutusunu işaretleyin.")
+            return
+        for item in items:
             self.channel_list.takeItem(self.channel_list.row(item))
         self._save_channels()
 
@@ -646,6 +763,13 @@ class MainWindow(QMainWindow):
         return [self.channel_list.item(i).data(Qt.UserRole)
                 for i in range(self.channel_list.count())]
 
+    def _channel_entries(self) -> list[dict]:
+        """Kayitli kanallar {"url", "name"} sozlukleri olarak (izleme listesi
+        gibi diger ekranlarin kanal adresini elle yazmadan secebilmesi icin)."""
+        return [{"url": self.channel_list.item(i).data(Qt.UserRole),
+                 "name": self.channel_list.item(i).data(Qt.UserRole + 1) or ""}
+                for i in range(self.channel_list.count())]
+
     def _active_channel_inputs(self) -> list:
         """Aramada kullanilacak, isareti acik kanal adresleri."""
         return [self.channel_list.item(i).data(Qt.UserRole)
@@ -658,7 +782,7 @@ class MainWindow(QMainWindow):
             return
         url = f"https://www.youtube.com/channel/{video.channel_id}"
         self.channel_edit.setText(url)
-        self.add_channel(name=video.channel_title)
+        self.add_channel(name=video.channel_title, channel_id=video.channel_id)
         self.statusBar().showMessage(f"Kanal eklendi: {video.channel_title}")
 
     def _apply_date_preset(self, start_days_back: int, end_days_back: int):
@@ -884,6 +1008,31 @@ class MainWindow(QMainWindow):
         return True
 
     # ================================================================ tablo
+    def _results_header_menu(self, pos):
+        """Sonuc tablosu baslik satirina sag tiklayinca sutun goster/gizle menusu."""
+        header = self.table.horizontalHeader()
+        menu = QMenu(self)
+        for col, label in enumerate(HEADERS):
+            if col in ALWAYS_VISIBLE_COLUMNS:
+                continue
+            act = menu.addAction(label)
+            act.setCheckable(True)
+            act.setChecked(not self.table.isColumnHidden(col))
+            act.toggled.connect(lambda checked, c=col: self._set_column_hidden(c, not checked))
+        menu.exec(header.mapToGlobal(pos))
+
+    def _set_column_hidden(self, col: int, hidden: bool):
+        self.table.setColumnHidden(col, hidden)
+        hidden_cols = {c for c in range(len(HEADERS))
+                       if self.table.isColumnHidden(c)} - ALWAYS_VISIBLE_COLUMNS
+        self.settings.results_hidden_columns = sorted(hidden_cols)
+        self.settings.save()
+
+    def _apply_hidden_columns(self):
+        for col in self.settings.results_hidden_columns:
+            if 0 <= col < len(HEADERS) and col not in ALWAYS_VISIBLE_COLUMNS:
+                self.table.setColumnHidden(col, True)
+
     def _set_row_items(self, row: int, no: int, video: VideoResult):
         no_item = SortableItem(str(no))
         no_item.setData(Qt.UserRole, no)
@@ -893,9 +1042,15 @@ class MainWindow(QMainWindow):
         ch_item.setData(Qt.UserRole, video.channel_title.casefold())
         date_item = SortableItem(video.published_display)
         date_item.setData(Qt.UserRole, video.published_sort_key)
+        duration_item = SortableItem(video.duration_display)
+        duration_item.setData(Qt.UserRole, video.duration or 0)
+        kind_item = SortableItem(video.kind_display)
+        kind_item.setData(Qt.UserRole, video.kind_display)
         url_item = SortableItem(video.url)
-        items = (no_item, title_item, ch_item, date_item, url_item)
-        for col, item in zip((COL_NO, COL_TITLE, COL_CHANNEL, COL_DATE, COL_URL), items):
+        items = (no_item, title_item, ch_item, date_item, duration_item, kind_item, url_item)
+        for col, item in zip(
+                (COL_NO, COL_TITLE, COL_CHANNEL, COL_DATE, COL_DURATION, COL_KIND, COL_URL),
+                items):
             self.table.setItem(row, col, item)
         if video.url in self._downloaded_urls:
             for item in items:
@@ -1076,7 +1231,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Bu videonun kanal bilgisi alınamadı.")
             return
         self.channel_edit.setText(f"https://www.youtube.com/channel/{channel_id}")
-        self.add_channel(name=channel_title)
+        self.add_channel(name=channel_title, channel_id=channel_id)
         self.statusBar().showMessage(f"Kanal eklendi: {channel_title or channel_id}")
 
     def _delete_selected_history(self):
@@ -1209,20 +1364,23 @@ class MainWindow(QMainWindow):
     def _context_menu(self, pos):
         menu = QMenu(self)
         open_act = menu.addAction(icon("open"), "Tarayıcıda aç")
-        copy_act = menu.addAction(icon("copy"), "Adresi kopyala")
+        copy_act = menu.addAction(icon("copy"), "Adresi kopyala\tCtrl+C")
+        copy_all_act = menu.addAction(icon("copy"), "Linkleri kopyala")
         info_act = menu.addAction(icon("info"), "Video bilgisi")
         menu.addSeparator()
-        download_act = menu.addAction(icon("download"), "İndir")
+        download_act = menu.addAction(icon("download"), "İndir\tCtrl+D")
         frames_act = menu.addAction("Görüntü çıkar")
         channel_act = menu.addAction(icon("add"), "Kanallara ekle")
         menu.addSeparator()
-        sel_act = menu.addAction(icon("select_all"), "Hepsini seç")
+        sel_act = menu.addAction(icon("select_all"), "Hepsini seç\tCtrl+A")
         clear_act = menu.addAction(icon("clear"), "Listeyi temizle")
         action = menu.exec(self.table.viewport().mapToGlobal(pos))
         if action == open_act:
             self._open_current_video()
         elif action == copy_act:
             self.copy_selected()
+        elif action == copy_all_act:
+            self.copy_all()
         elif action == info_act:
             self._show_video_info()
         elif action == download_act:
