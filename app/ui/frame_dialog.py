@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 from app.services.ffmpeg_service import (
     FFmpegError, ffmpeg_available, parse_timecode,
 )
+from app.ui.icons import icon
 from app.ui.theme import ACCENT_BUTTON_OBJECT_NAME
 from app.workers.frame_worker import FrameWorker
 
@@ -42,11 +43,11 @@ class FrameDialog(QDialog):
 
         # Cikti klasoru
         dir_row = QHBoxLayout()
-        dir_row.addWidget(QLabel("Çıktı Klasörü:"))
+        dir_row.addWidget(QLabel("Çıktı klasörü"))
         self.dir_edit = QLineEdit()
         default_dir = os.path.join(os.path.dirname(self.video_path), "kareler")
         self.dir_edit.setText(default_dir)
-        browse_btn = QPushButton("Gözat")
+        browse_btn = QPushButton(icon("folder"), "Gözat")
         browse_btn.clicked.connect(self._browse_dir)
         dir_row.addWidget(self.dir_edit, 1)
         dir_row.addWidget(browse_btn)
@@ -54,7 +55,7 @@ class FrameDialog(QDialog):
 
         # Format
         fmt_row = QHBoxLayout()
-        fmt_row.addWidget(QLabel("Görüntü Formatı:"))
+        fmt_row.addWidget(QLabel("Görüntü formatı"))
         self.format_combo = QComboBox()
         self.format_combo.addItem("JPG", "jpg")
         self.format_combo.addItem("PNG", "png")
@@ -81,7 +82,7 @@ class FrameDialog(QDialog):
 
         # Aralik
         self.interval_box = QVBoxLayout()
-        self.interval_box.addWidget(QLabel("Aralık (saniye):"))
+        self.interval_box.addWidget(QLabel("Aralık (saniye)"))
         self.interval_edit = QLineEdit()
         self.interval_edit.setPlaceholderText("örn: 30")
         self.interval_box.addWidget(self.interval_edit)
@@ -118,7 +119,7 @@ class FrameDialog(QDialog):
 
     def _browse_dir(self):
         path = QFileDialog.getExistingDirectory(
-            self, "Çıktı Klasörü Seç", self.dir_edit.text())
+            self, "Çıktı klasörü seç", self.dir_edit.text())
         if path:
             self.dir_edit.setText(path)
 
@@ -127,7 +128,7 @@ class FrameDialog(QDialog):
             return
         if not ffmpeg_available():
             QMessageBox.warning(
-                self, "FFmpeg Gerekli",
+                self, "FFmpeg gerekli",
                 "Görüntü çıkarmak için FFmpeg gereklidir. Lütfen FFmpeg'i "
                 "kurun veya uygulama klasöründeki tools/ffmpeg/ içine koyun.")
             return

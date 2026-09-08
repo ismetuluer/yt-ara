@@ -6,7 +6,7 @@ import time
 import webbrowser
 from urllib.parse import parse_qs, urlparse
 
-from PySide6.QtCore import QByteArray, QDate, Qt, QTimer
+from PySide6.QtCore import QByteArray, QDate, QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QGuiApplication, QKeySequence
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QCheckBox, QDateEdit, QFileDialog, QFrame,
@@ -26,6 +26,7 @@ from app.services.scheduled_download_service import ScheduledDownloadService
 from app.services.search import SearchEngine, YouTubeApiSearchEngine, YtDlpSearchEngine
 from app.services.settings_service import SettingsService
 from app.services.watchlist_service import WatchlistService
+from app.ui.icons import icon
 from app.ui.scheduled_tab import ScheduledTab
 from app.ui.settings_dialog import SettingsDialog
 from app.ui.theme import (
@@ -43,11 +44,19 @@ from app.workers.update_worker import YtDlpUpdateWorker
 from app.workers.watchlist_worker import WatchlistWorker
 
 COL_NO, COL_TITLE, COL_CHANNEL, COL_DATE, COL_URL = range(5)
-HEADERS = ["No", "Video Başlığı", "Kanal", "Yayın Tarihi", "Video Adresi"]
+# Sutun basliklari kisa tutulur: icerigi zaten sutunun kendisi anlatiyor
+# ("Video Başlığı" yerine "Başlık" gibi).
+HEADERS = ["No", "Başlık", "Kanal", "Tarih", "Adres"]
 CACHE_TTL = 300  # saniye; ayni aramanin tekrarini onler
-# Sol kenar cubugundaki gezinme baslikları; sirasi QStackedWidget'taki
-# sayfa sirasiyla birebir ayni olmalidir.
-NAV_ITEMS = ["Sonuçlar", "Geçmiş", "Zamanlanmış", "İzleme listesi"]
+# Sol kenar cubugundaki gezinme ogeleri (baslik, ikon adi); sirasi
+# QStackedWidget'taki sayfa sirasiyla birebir ayni olmalidir.
+NAV_ENTRIES = [
+    ("Sonuçlar", "results"),
+    ("Geçmiş", "history"),
+    ("Zamanlanmış", "calendar"),
+    ("İzleme listesi", "watch"),
+]
+NAV_ITEMS = [label for label, _ in NAV_ENTRIES]
 # Bolme durumu kaydinin duzen surumu (bkz. _restore_window_state).
 _SPLITTER_STATE_VERSION = "v2:"
 DOWNLOADED_COLOR = QColor(198, 239, 206)  # indirilen videolari vurgulamak icin
@@ -211,8 +220,11 @@ class MainWindow(QMainWindow):
         # Gezinme (eski sekmelerin yerini alir)
         self.nav_list = QListWidget()
         self.nav_list.setObjectName(NAV_LIST_OBJECT_NAME)
-        for label in NAV_ITEMS:
-            self.nav_list.addItem(QListWidgetItem(label))
+        self.nav_list.setIconSize(QSize(17, 17))
+        for label, icon_name in NAV_ENTRIES:
+            # Secili satir mavi zeminde durur; icons.icon() bunun icin
+            # QIcon.Selected kipini de doldurur (ikon beyaza doner).
+            self.nav_list.addItem(QListWidgetItem(icon(icon_name, 17), label))
         self.nav_list.setCurrentRow(0)
         self.nav_list.setFocusPolicy(Qt.NoFocus)
         self.nav_list.setFixedHeight(len(NAV_ITEMS) * 36 + 8)
@@ -232,7 +244,7 @@ class MainWindow(QMainWindow):
         self.channel_edit = QLineEdit()
         self.channel_edit.setPlaceholderText("Kanal adresi yapıştır")
         self.channel_edit.returnPressed.connect(self.add_channel)
-        self.add_channel_btn = QPushButton("Ekle")
+        self.add_channel_btn = QPushButton(icon("add"), "Ekle")
         self.add_channel_btn.clicked.connect(self.add_channel)
         add_row.addWidget(self.channel_edit, 1)
         add_row.addWidget(self.add_channel_btn)
@@ -248,13 +260,13 @@ class MainWindow(QMainWindow):
 
         # Kenar cubugu dar oldugundan dort dugme tek satira sigmaz; iki
         # satira bolunur.
-        self.select_all_channels_btn = QPushButton("Hepsini seç")
+        self.select_all_channels_btn = QPushButton(icon("select_all"), "Hepsini seç")
         self.select_all_channels_btn.clicked.connect(self._select_all_channels)
-        self.clear_channel_selection_btn = QPushButton("Temizle")
+        self.clear_channel_selection_btn = QPushButton(icon("clear"), "Temizle")
         self.clear_channel_selection_btn.clicked.connect(self._clear_channel_selection)
-        self.remove_channel_btn = QPushButton("Sil")
+        self.remove_channel_btn = QPushButton(icon("delete"), "Sil")
         self.remove_channel_btn.clicked.connect(self.remove_channel)
-        self.rename_channel_btn = QPushButton("Adlandır")
+        self.rename_channel_btn = QPushButton(icon("edit"), "Adlandır")
         self.rename_channel_btn.clicked.connect(self._rename_selected_channel)
         for first, second in ((self.select_all_channels_btn, self.clear_channel_selection_btn),
                               (self.remove_channel_btn, self.rename_channel_btn)):
@@ -273,11 +285,11 @@ class MainWindow(QMainWindow):
         self._load_saved_channels()
 
         lay.addSpacing(6)
-        self.downloads_btn = QPushButton("İndirmeler")
+        self.downloads_btn = QPushButton(icon("download"), "İndirmeler")
         self.downloads_btn.setVisible(False)
         self.downloads_btn.clicked.connect(self._show_download_dialogs)
         lay.addWidget(self.downloads_btn)
-        self.settings_btn = QPushButton("Ayarlar")
+        self.settings_btn = QPushButton(icon("settings"), "Ayarlar")
         self.settings_btn.clicked.connect(self.open_settings)
         lay.addWidget(self.settings_btn)
         return side
@@ -327,13 +339,14 @@ class MainWindow(QMainWindow):
         self.query_edit.setPlaceholderText("Ne aramak istersin?")
         self.query_edit.setMinimumHeight(34)
         self.query_edit.returnPressed.connect(self.start_search)
-        self.search_btn = QPushButton("Ara")
+        # Vurgu (mavi) dugmenin ikonu beyaz uretilir.
+        self.search_btn = QPushButton(icon("search", on_accent=True), "Ara")
         self.search_btn.setObjectName(ACCENT_BUTTON_OBJECT_NAME)
         self.search_btn.setMinimumHeight(34)
         self.search_btn.setMinimumWidth(96)
         self.search_btn.setCursor(Qt.PointingHandCursor)
         self.search_btn.clicked.connect(self.start_search)
-        self.cancel_btn = QPushButton("İptal")
+        self.cancel_btn = QPushButton(icon("cancel"), "İptal")
         self.cancel_btn.setMinimumHeight(34)
         self.cancel_btn.setVisible(False)
         self.cancel_btn.clicked.connect(self.cancel_search)
@@ -400,10 +413,10 @@ class MainWindow(QMainWindow):
         res_layout.setContentsMargins(0, 0, 0, 0)
         res_top = QHBoxLayout()
         self.count_label = QLabel("0 sonuç")
-        self.more_btn = QPushButton("Daha fazla")
+        self.more_btn = QPushButton(icon("more"), "Daha fazla")
         self.more_btn.setEnabled(False)
         self.more_btn.clicked.connect(lambda: self.continue_search(fetch_all=False))
-        self.all_btn = QPushButton("Tümünü getir")
+        self.all_btn = QPushButton("Hepsini getir")
         self.all_btn.setEnabled(False)
         self.all_btn.clicked.connect(lambda: self.continue_search(fetch_all=True))
         res_top.addWidget(self.count_label)
@@ -433,17 +446,17 @@ class MainWindow(QMainWindow):
         res_layout.addWidget(self.table)
 
         btn_row = QHBoxLayout()
-        self.copy_sel_btn = QPushButton("Seçilenleri kopyala")
+        self.copy_sel_btn = QPushButton(icon("copy"), "Seçilenleri kopyala")
         self.copy_sel_btn.clicked.connect(self.copy_selected)
-        self.copy_all_btn = QPushButton("Tümünü kopyala")
+        self.copy_all_btn = QPushButton(icon("copy"), "Hepsini kopyala")
         self.copy_all_btn.clicked.connect(self.copy_all)
-        self.txt_btn = QPushButton("TXT olarak kaydet")
+        self.txt_btn = QPushButton(icon("document"), "TXT'ye kaydet")
         txt_menu = QMenu(self)
-        txt_menu.addAction("Tümünü kaydet", lambda: self.export_txt(grouped=False))
+        txt_menu.addAction("Düz liste", lambda: self.export_txt(grouped=False))
         txt_menu.addAction("Kanala göre grupla",
                            lambda: self.export_txt(grouped=True))
         self.txt_btn.setMenu(txt_menu)
-        self.download_all_btn = QPushButton("Tümünü indir")
+        self.download_all_btn = QPushButton(icon("download"), "Hepsini indir")
         self.download_all_btn.clicked.connect(self.download_all)
         for b in (self.copy_sel_btn, self.copy_all_btn, self.txt_btn, self.download_all_btn):
             btn_row.addWidget(b)
@@ -456,7 +469,7 @@ class MainWindow(QMainWindow):
         hist_layout.setContentsMargins(0, 0, 0, 0)
         self.history_table = QTableWidget(0, 4)
         self.history_table.setHorizontalHeaderLabels(
-            ["Video Başlığı", "İndirme Tarihi", "Durum", "Video Adresi"])
+            ["Başlık", "İndirme tarihi", "Durum", "Adres"])
         self.history_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.history_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.history_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -472,7 +485,7 @@ class MainWindow(QMainWindow):
         self.history_table.verticalHeader().setVisible(False)
         hist_layout.addWidget(self.history_table)
         hist_btn_row = QHBoxLayout()
-        self.refresh_history_btn = QPushButton("Yenile")
+        self.refresh_history_btn = QPushButton(icon("refresh"), "Yenile")
         self.refresh_history_btn.clicked.connect(self._load_history_tab)
         hist_btn_row.addStretch(1)
         hist_btn_row.addWidget(self.refresh_history_btn)
@@ -606,7 +619,7 @@ class MainWindow(QMainWindow):
         current_name = item.data(Qt.UserRole + 1) or ""
         url = item.data(Qt.UserRole)
         new_name, ok = QInputDialog.getText(
-            self, "Kanalı Yeniden Adlandır", "Kanal adı:", text=current_name)
+            self, "Kanalı yeniden adlandır", "Yeni ad:", text=current_name)
         if not ok:
             return
         new_name = new_name.strip()
@@ -619,8 +632,8 @@ class MainWindow(QMainWindow):
         if item is None:
             return
         menu = QMenu(self)
-        rename_act = menu.addAction("Yeniden Adlandır")
-        remove_act = menu.addAction("Kaldır")
+        rename_act = menu.addAction(icon("edit"), "Yeniden adlandır")
+        remove_act = menu.addAction(icon("delete"), "Sil")
         action = menu.exec(self.channel_list.viewport().mapToGlobal(pos))
         if action == rename_act:
             self._rename_channel(item)
@@ -699,14 +712,14 @@ class MainWindow(QMainWindow):
 
         error = validate_inputs(query, True, d_from, d_to)
         if error:
-            QMessageBox.warning(self, "Geçersiz Giriş", error)
+            QMessageBox.warning(self, "Eksik bilgi", error)
             return
 
         # API yontemi secildiyse anahtar gerekli
         method = self.settings.search_method
         if method == "api" and not self.settings.api_key:
             QMessageBox.information(
-                self, "API Anahtarı Gerekli",
+                self, "API anahtarı gerekli",
                 "YouTube API yöntemi için bir API anahtarı gereklidir.\n"
                 "Şimdi Ayarlar penceresi açılacak; lütfen anahtarınızı girin "
                 "veya 'API'siz' yöntemini seçin.")
@@ -747,7 +760,7 @@ class MainWindow(QMainWindow):
             return
         if fetch_all:
             answer = QMessageBox.question(
-                self, "Tümünü getir",
+                self, "Hepsini getir",
                 "Büyük aramalarda bu işlem uzun sürebilir ve API kotanızı hızlı "
                 "tüketebilir.\nDevam edilsin mi?")
             if answer != QMessageBox.Yes:
@@ -837,7 +850,7 @@ class MainWindow(QMainWindow):
         self._set_busy(False)
         self._finish_worker()
         self.statusBar().showMessage("Arama başarısız.")
-        QMessageBox.warning(self, "Arama Hatası", message)
+        QMessageBox.warning(self, "Arama başarısız", message)
 
     def _finish_worker(self):
         if self._worker is not None:
@@ -1012,11 +1025,11 @@ class MainWindow(QMainWindow):
         record_id = self.history_table.item(row, 0).data(Qt.UserRole)
         url = self.history_table.item(row, 3).text()
         menu = QMenu(self)
-        open_act = menu.addAction("Tarayıcıda Aç")
-        redownload_act = menu.addAction("Tekrar İndir")
-        channel_act = menu.addAction("Kanal Olarak Ekle")
+        open_act = menu.addAction(icon("open"), "Tarayıcıda aç")
+        redownload_act = menu.addAction(icon("download"), "Tekrar indir")
+        channel_act = menu.addAction(icon("add"), "Kanallara ekle")
         menu.addSeparator()
-        delete_act = menu.addAction("Geçmişten Sil")
+        delete_act = menu.addAction(icon("delete"), "Geçmişten sil")
         action = menu.exec(self.history_table.viewport().mapToGlobal(pos))
         if action == open_act:
             if url:
@@ -1078,7 +1091,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Silmek için geçmişten satır seçin.")
             return
         answer = QMessageBox.question(
-            self, "Geçmişten Sil",
+            self, "Geçmişten sil",
             f"{len(ids)} kayıt geçmişten kaldırılacak. Devam edilsin mi?")
         if answer != QMessageBox.Yes:
             return
@@ -1195,16 +1208,16 @@ class MainWindow(QMainWindow):
 
     def _context_menu(self, pos):
         menu = QMenu(self)
-        open_act = menu.addAction("Tarayıcıda Aç")
-        copy_act = menu.addAction("Video Adresini Kopyala")
-        info_act = menu.addAction("Video Bilgisi")
+        open_act = menu.addAction(icon("open"), "Tarayıcıda aç")
+        copy_act = menu.addAction(icon("copy"), "Adresi kopyala")
+        info_act = menu.addAction(icon("info"), "Video bilgisi")
         menu.addSeparator()
-        download_act = menu.addAction("İndir")
-        frames_act = menu.addAction("Görüntü Çıkar")
-        channel_act = menu.addAction("Kanal Olarak Ekle")
+        download_act = menu.addAction(icon("download"), "İndir")
+        frames_act = menu.addAction("Görüntü çıkar")
+        channel_act = menu.addAction(icon("add"), "Kanallara ekle")
         menu.addSeparator()
-        sel_act = menu.addAction("Tümünü Seç")
-        clear_act = menu.addAction("Listeyi Temizle")
+        sel_act = menu.addAction(icon("select_all"), "Hepsini seç")
+        clear_act = menu.addAction(icon("clear"), "Listeyi temizle")
         action = menu.exec(self.table.viewport().mapToGlobal(pos))
         if action == open_act:
             self._open_current_video()
@@ -1234,7 +1247,7 @@ class MainWindow(QMainWindow):
         if not self.results:
             return
         answer = QMessageBox.question(
-            self, "Listeyi Temizle",
+            self, "Listeyi temizle",
             f"{len(self.results)} sonuç listeden kaldırılacak. Devam edilsin mi?")
         if answer != QMessageBox.Yes:
             return
@@ -1291,7 +1304,7 @@ class MainWindow(QMainWindow):
             return
         if len(videos) > 20:
             answer = QMessageBox.question(
-                self, "Tümünü indir",
+                self, "Hepsini indir",
                 f"Listedeki {len(videos)} video indirilecek. Devam edilsin mi?")
             if answer != QMessageBox.Yes:
                 return
@@ -1415,7 +1428,7 @@ class MainWindow(QMainWindow):
             return
         if len(videos) > 1:
             QMessageBox.information(
-                self, "Görüntü Çıkarma",
+                self, "Görüntü çıkarma",
                 "Görüntü çıkarma tek bir video için yapılır. Lütfen bir video seçin.")
             return
         self._open_frame_dialog(videos[0])
@@ -1431,7 +1444,7 @@ class MainWindow(QMainWindow):
             dlg.exec()
             return
         answer = QMessageBox.question(
-            self, "Görüntü Çıkarma",
+            self, "Görüntü çıkarma",
             "Görüntü çıkarmak için önce videonun indirilmesi gerekir.\n"
             "Şimdi indirilsin mi?")
         if answer != QMessageBox.Yes:
@@ -1472,8 +1485,8 @@ class MainWindow(QMainWindow):
         base_dir = self.settings.export_dir or default_download_dir()
         stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
         path, _ = QFileDialog.getSaveFileName(
-            self, "TXT Olarak Kaydet", f"{base_dir}/videolar_{stamp}.txt",
-            "Metin Dosyası (*.txt)")
+            self, "TXT olarak kaydet", f"{base_dir}/videolar_{stamp}.txt",
+            "Metin dosyası (*.txt)")
         if not path:
             return
         videos = self._table_videos()
@@ -1484,7 +1497,7 @@ class MainWindow(QMainWindow):
                 count = export_service.export_txt(path, videos)
         except OSError as exc:
             self.log.error("Disa aktarma hatasi: %s", exc)
-            QMessageBox.warning(self, "Kayıt Hatası",
+            QMessageBox.warning(self, "Kaydedilemedi",
                                 "Dosya kaydedilemedi. Klasör izinlerini kontrol edin.")
             return
         self.log.info("TXT dosyasina %d kayit aktarildi: %s", count, path)

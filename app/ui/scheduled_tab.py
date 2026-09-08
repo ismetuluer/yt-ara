@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.services.scheduled_download_service import ScheduledDownloadService
+from app.ui.icons import icon
 
 
 class ScheduledTab(QWidget):
@@ -25,7 +26,7 @@ class ScheduledTab(QWidget):
     def _build_ui(self):
         layout = QVBoxLayout(self)
         self.table = QTableWidget(0, 2)
-        self.table.setHorizontalHeaderLabels(["Video Başlığı", "Çalışma Zamanı"])
+        self.table.setHorizontalHeaderLabels(["Başlık", "Çalışma zamanı"])
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -38,9 +39,9 @@ class ScheduledTab(QWidget):
         layout.addWidget(self.table)
 
         btn_row = QHBoxLayout()
-        self.refresh_btn = QPushButton("Yenile")
+        self.refresh_btn = QPushButton(icon("refresh"), "Yenile")
         self.refresh_btn.clicked.connect(self.refresh)
-        self.cancel_btn = QPushButton("Seçilenleri iptal et")
+        self.cancel_btn = QPushButton(icon("cancel"), "Seçilenleri iptal et")
         self.cancel_btn.clicked.connect(self._cancel_selected)
         btn_row.addWidget(self.refresh_btn)
         btn_row.addWidget(self.cancel_btn)
@@ -87,7 +88,7 @@ class ScheduledTab(QWidget):
         if self.table.itemAt(pos) is None:
             return
         menu = QMenu(self)
-        cancel_act = menu.addAction("İptal et")
+        cancel_act = menu.addAction(icon("cancel"), "İptal et")
         action = menu.exec(self.table.viewport().mapToGlobal(pos))
         if action == cancel_act:
             self._cancel_selected()

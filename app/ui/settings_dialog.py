@@ -13,6 +13,7 @@ from app.services.quota_service import QuotaTracker
 from app.services.settings_service import SettingsService
 from app.services.youtube_service import YouTubeError, YouTubeService
 from app.services.ytdlp_updater import YtDlpUpdater
+from app.ui.icons import icon
 from app.ui.theme import ACCENT_BUTTON_OBJECT_NAME
 from app.workers.app_update_worker import AppUpdateWorker
 from app.workers.ffmpeg_download_worker import FFmpegDownloadWorker
@@ -78,7 +79,7 @@ class SettingsDialog(QDialog):
         self.quota_bar.setRange(0, 100)
         self.quota_bar.setFormat("%p%")
         quota_row.addWidget(self.quota_bar, 1)
-        self.quota_refresh_btn = QPushButton("Yenile")
+        self.quota_refresh_btn = QPushButton(icon("refresh"), "Yenile")
         self.quota_refresh_btn.clicked.connect(self._refresh_quota)
         quota_row.addWidget(self.quota_refresh_btn)
         form.addRow("Kota kullanımı", quota_row)
@@ -115,7 +116,7 @@ class SettingsDialog(QDialog):
         dir_row = QHBoxLayout()
         self.dir_edit = QLineEdit(self.settings.export_dir)
         self.dir_edit.setPlaceholderText("Her seferinde sorulur")
-        browse = QPushButton("Gözat")
+        browse = QPushButton(icon("folder"), "Gözat")
         browse.clicked.connect(self._browse_dir)
         dir_row.addWidget(self.dir_edit, 1)
         dir_row.addWidget(browse)
@@ -125,7 +126,7 @@ class SettingsDialog(QDialog):
         dl_row = QHBoxLayout()
         self.dl_dir_edit = QLineEdit(self.settings.download_dir)
         self.dl_dir_edit.setPlaceholderText("Masaüstü")
-        dl_browse = QPushButton("Gözat")
+        dl_browse = QPushButton(icon("folder"), "Gözat")
         dl_browse.clicked.connect(self._browse_dl_dir)
         dl_row.addWidget(self.dl_dir_edit, 1)
         dl_row.addWidget(dl_browse)
@@ -229,7 +230,7 @@ class SettingsDialog(QDialog):
         ffmpeg_row = QHBoxLayout()
         self.ffmpeg_status_label = QLabel()
         self._refresh_ffmpeg_status()
-        self.download_ffmpeg_btn = QPushButton("İndir")
+        self.download_ffmpeg_btn = QPushButton(icon("download"), "İndir")
         self.download_ffmpeg_btn.clicked.connect(self._download_ffmpeg)
         ffmpeg_row.addWidget(self.ffmpeg_status_label, 1)
         ffmpeg_row.addWidget(self.download_ffmpeg_btn)
@@ -242,7 +243,7 @@ class SettingsDialog(QDialog):
         # yt-dlp guncelleme (YouTube degisikliklerine karsi)
         upd_row = QHBoxLayout()
         self.ytdlp_version_label = QLabel(f"Kurulu: {YtDlpUpdater().current_version()}")
-        self.update_ytdlp_btn = QPushButton("Güncellemeyi denetle")
+        self.update_ytdlp_btn = QPushButton(icon("refresh"), "Güncellemeyi denetle")
         self.update_ytdlp_btn.clicked.connect(self._update_ytdlp)
         upd_row.addWidget(self.ytdlp_version_label, 1)
         upd_row.addWidget(self.update_ytdlp_btn)
@@ -257,7 +258,7 @@ class SettingsDialog(QDialog):
         # Uygulama surumu (GitHub Releases)
         app_upd_row = QHBoxLayout()
         self.app_version_label = QLabel(f"Kurulu: v{AppUpdater.current_version()}")
-        self.check_app_update_btn = QPushButton("Güncellemeyi denetle")
+        self.check_app_update_btn = QPushButton(icon("refresh"), "Güncellemeyi denetle")
         self.check_app_update_btn.clicked.connect(self._check_app_update)
         app_upd_row.addWidget(self.app_version_label, 1)
         app_upd_row.addWidget(self.check_app_update_btn)

@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.services.app_updater import AppUpdater
+from app.ui.icons import icon
 from app.ui.theme import ACCENT_BUTTON_OBJECT_NAME, sync_titlebar
 from app.workers.app_update_worker import AppUpdateWorker
 
@@ -79,7 +80,7 @@ class UpdateDialog(QDialog):
         self.skip_btn.clicked.connect(self._skip)
         self.later_btn = QPushButton("Sonra")
         self.later_btn.clicked.connect(self.reject)
-        self.update_btn = QPushButton("Şimdi güncelle")
+        self.update_btn = QPushButton(icon("download", on_accent=True), "Şimdi güncelle")
         self.update_btn.setObjectName(ACCENT_BUTTON_OBJECT_NAME)
         self.update_btn.setDefault(True)
         self.update_btn.setCursor(Qt.PointingHandCursor)

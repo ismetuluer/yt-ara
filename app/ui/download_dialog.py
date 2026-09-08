@@ -18,6 +18,7 @@ from app.services.download_history import DownloadHistory
 from app.services.download_service import QUALITY_OPTIONS
 from app.services.ffmpeg_service import ffmpeg_available, find_ffmpeg
 from app.services.scheduled_download_service import ScheduledDownloadService
+from app.ui.icons import icon
 from app.ui.theme import ACCENT_BUTTON_OBJECT_NAME
 from app.utils.paths import default_download_dir
 from app.workers.download_worker import DownloadWorker
@@ -62,7 +63,7 @@ class DownloadDialog(QDialog):
         self.dir_edit = QLabel()
         self.dir_edit.setText(self.settings.download_dir or default_download_dir())
         self.dir_edit.setWordWrap(True)
-        browse_btn = QPushButton("Gözat")
+        browse_btn = QPushButton(icon("folder"), "Gözat")
         browse_btn.clicked.connect(self._browse_dir)
         dir_row.addWidget(self.dir_edit, 1)
         dir_row.addWidget(browse_btn)
@@ -125,10 +126,10 @@ class DownloadDialog(QDialog):
 
         # Butonlar
         btn_row = QHBoxLayout()
-        self.download_btn = QPushButton("İndir")
+        self.download_btn = QPushButton(icon("download", on_accent=True), "İndir")
         self.download_btn.setObjectName(ACCENT_BUTTON_OBJECT_NAME)
         self.download_btn.clicked.connect(self._start)
-        self.cancel_btn = QPushButton("İptal")
+        self.cancel_btn = QPushButton(icon("cancel"), "İptal")
         self.cancel_btn.setVisible(False)
         self.cancel_btn.clicked.connect(self._cancel)
         self.background_btn = QPushButton("Arka plana gönder")

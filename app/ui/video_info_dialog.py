@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.models.video import VideoResult
+from app.ui.icons import icon
 from app.services.download_history import DownloadHistory
 from app.services.ytdlp_service import YtDlpError, YtDlpService
 
@@ -50,9 +51,9 @@ class VideoInfoDialog(QDialog):
         layout.addStretch(1)
 
         btn_row = QHBoxLayout()
-        self.open_btn = QPushButton("Tarayıcıda aç")
+        self.open_btn = QPushButton(icon("open"), "Tarayıcıda aç")
         self.open_btn.clicked.connect(lambda: webbrowser.open(self.video.url))
-        self.download_btn = QPushButton("İndir")
+        self.download_btn = QPushButton(icon("download"), "İndir")
         self.download_btn.clicked.connect(self._download)
         self.frames_btn = QPushButton("Görüntü çıkar")
         self.frames_btn.clicked.connect(self._frames)
