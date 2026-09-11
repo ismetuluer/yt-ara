@@ -47,7 +47,7 @@ from app.workers.watchlist_worker import WatchlistWorker
 COL_NO, COL_TITLE, COL_CHANNEL, COL_DATE, COL_DURATION, COL_KIND, COL_STATUS, COL_URL = range(8)
 # Sutun basliklari kisa tutulur: icerigi zaten sutunun kendisi anlatiyor
 # ("Video Başlığı" yerine "Başlık" gibi).
-HEADERS = ["No", "Başlık", "Kanal", "Tarih", "Süre", "Tür", "Durum", "Adres"]
+HEADERS = ["No", "Başlık", "Kanal", "Oluşturulma tarihi", "Süre", "Tür", "Durum", "Adres"]
 # "No" sutunu (satir sirasi) her zaman gorunur kalir; kullanici gizleyemez.
 ALWAYS_VISIBLE_COLUMNS = {COL_NO}
 CACHE_TTL = 300  # saniye; ayni aramanin tekrarini onler
@@ -1098,7 +1098,7 @@ class MainWindow(QMainWindow):
             title_item.setToolTip("Bu videoda altyazı mevcut.")
         ch_item = SortableItem(video.channel_title)
         ch_item.setData(Qt.UserRole, video.channel_title.casefold())
-        date_item = SortableItem(video.published_display)
+        date_item = SortableItem(video.published_datetime_display)
         date_item.setData(Qt.UserRole, video.published_sort_key)
         duration_item = SortableItem(video.duration_display)
         duration_item.setData(Qt.UserRole, video.duration or 0)

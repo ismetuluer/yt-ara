@@ -32,6 +32,22 @@ class VideoResult:
             return self.published_at
 
     @property
+    def published_datetime_display(self) -> str:
+        """GG.AA.YYYY SS:DD -- saat bilgisi varsa eklenir.
+
+        yt-dlp (API'siz) modunda yayin tarihi yalnizca gun hassasiyetinde
+        gelir (saat hep gece yarisina sabitlenir); bu yuzden saat, yalnizca
+        00:00'dan farkliysa (gercekten bilindiginde, ornegin API modunda)
+        gosterime eklenir -- aksi halde yaniltici bir "gece yarisi
+        yayinlandi" izlenimi vermemek icin sadece tarih gosterilir.
+        """
+        base = self.published_display
+        time_part = self.published_at[11:16] if len(self.published_at) >= 16 else ""
+        if time_part and time_part != "00:00":
+            return f"{base} {time_part}"
+        return base
+
+    @property
     def published_sort_key(self) -> str:
         return self.published_at or ""
 
